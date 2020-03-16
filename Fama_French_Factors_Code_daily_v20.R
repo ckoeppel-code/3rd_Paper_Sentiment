@@ -2802,17 +2802,12 @@ dataset <- sorts %>%
 
 data = dataset
 
-# No pre-processing required as all time series are returns on the same scale
-mean <- apply(train.dataset, 2, mean, na.rm = T)
-std <- apply(train.dataset, 2, sd, na.rm = T)
-data <- scale(dataset, center = mean, scale = std)
-
 # reverse scaling for later 
 # data2 <- t(t(data) * std + mean)
 
 # Create datasets for training, validation and test
 no.train <- 0.50
-no.valid <- 0.25
+no.valid <- 0.25 
 no.test <- 0.25
 
 min.train <- 1
@@ -2826,11 +2821,16 @@ train.data <- data[min.train:max.train,]
 valid.data <- data[min.valid:max.valid,]
 test.data <- data[min.test:max.test,]
 
+# No pre-processing required as all time series are returns on the same scale
+# mean <- apply(train.dataset, 2, mean, na.rm = T)
+# std <- apply(train.dataset, 2, sd, na.rm = T)
+# data <- scale(dataset, center = mean, scale = std)
+
 # Generator function
 
 generator <- function(data, lookback, delay, min_index, max_index,
                       shuffle = FALSE, batch_size = 128, step = 1) {
-  # browser()
+   # browser()
   if (is.null(max_index))
     max_index <- nrow(data) - delay - 1
   i <- min_index + lookback
@@ -2860,9 +2860,9 @@ generator <- function(data, lookback, delay, min_index, max_index,
 }
 
 lookback <- 52 # How many timesteps back the input data should go? weekly: 4x3 for a quarter
-step <- 1 # The period, in timesteps, at which you sample data
+step <- 12 # The period, in timesteps, at which you sample data
 delay <- 1 # How many timesteps in the future the target should be? next week
-batch_size <- 128
+batch_size <- 256
 
 train_gen <- generator(
   data,
@@ -2960,11 +2960,11 @@ linear.history <- model %>% fit_generator(
   validation_data = val_gen,
   validation_steps = val_steps)
 
-linear.history %>% plot()
+linear.history %>% plot() + geom_line()
 linear.history %>% save(file = "linear.history.RData")
 
-plot_model(linear.history)
-get_weights(linear.history)
+# plot_model(linear.history)
+# get_weights(linear.history)
 
 
 # Basic machine learning approach ####
@@ -3007,7 +3007,6 @@ rnn.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 rnn.history %>% plot() + geom_line()
-add.lines()
 rnn.history %>% save(file = "rnn.history.RData")
 
 # Using recurrent dropout to fight overfitting ####
@@ -3029,7 +3028,7 @@ rec.drop.history <- model %>% fit_generator(
   validation_data = val_gen,
   validation_steps = val_steps)
 
-rec.drop.history %>% plot()  + geom_line()
+# rec.drop.history %>% plot()  + geom_line()
 rec.drop.history %>% save(file = "rec.drop.history.RData")
 
 # Stacking recurrent layers ####
@@ -3060,13 +3059,13 @@ stacked.history <- model %>% fit_generator(
 stacked.history %>% plot() + geom_line()
 stacked.history %>% save(file = "stacked.history.RData")
 
-# LSTM example with R2  ####
+# LSTM ####
 
 model = keras_model_sequential() %>% 
-  layer_lstm(units=64, input_shape = c(lookback / step, dim(dataset)[-1]), activation = "relu") %>%  
-  layer_dense(units=32, activation = "relu") %>% 
-  layer_dense(units=16) %>% 
-  layer_dense(units=1)
+  layer_lstm(units = 64, input_shape = c(lookback / step, dim(dataset)[-1]), activation = "relu") %>%  
+  layer_dense(units = 32, activation = "relu") %>% 
+  layer_dense(units = 16) %>% 
+  layer_dense(units = 1)
 
 model %>% compile(
   optimizer = optimizer_rmsprop(),
@@ -3076,7 +3075,7 @@ model %>% compile(
 lstm.r2.history <- model %>% fit_generator(
   train_gen,
   steps_per_epoch = 500,
-  epochs = 5,
+  epochs = 20,
   validation_data = val_gen,
   validation_steps = val_steps)
 
