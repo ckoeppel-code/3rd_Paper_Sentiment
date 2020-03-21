@@ -1385,7 +1385,7 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
     spread(Port, ret.port) %>%
     ungroup %>% # transpose portfolios expressed as rows into seperate columns
     join(rf, by = "Date") %>% 
-    mutate_at(vars(-Date), funs((. - RF))) %>%
+    mutate_at(vars(-Date), funs((. - RF))) %>% #compute excess returns
     select(-RF)
   
   return(Ret)
@@ -2028,7 +2028,7 @@ if (sort.selector  ==  1 && factor.selector == 1) {
 
 save(sorts, file = paste(filepath, "sorts.RData", sep = ""))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
-# Model performance on factor 25 mimicking portfolios ####
+# Preparation ####
 
 load(paste(filepath, "sorts.RData", sep = ""))
 load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
@@ -2042,7 +2042,7 @@ run_model <- function(df, factors){
   
   model <- df %>% 
     gather(key = "port", value = "Ret", -Date) %>%
-    join(factors, by = "Date") %>%
+    plyr::join(factors, by = "Date") %>%
     group_by(port) %>%
     do(fit.model = lm(model_formula, data = .))
   
@@ -2055,6 +2055,8 @@ run_model <- function(df, factors){
               model.pred,
               model.stats))
 }
+
+# Model performance on factor 25 mimicking portfolios ####
 
 # Define models
 ff3.factors <- sorts %>%  select(Date, MktRf, SMB, HML)
@@ -2087,32 +2089,6 @@ list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
 # save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = ""))
 
 # Model performance on factor 25 mimicking portfolios - sentiment split ####
-
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
-
-y <- "mimicking portfolios" #indicator for WRDS
-
-run_model <- function(df, factors){
-  #browser()
-  model_formula <- as.formula(paste("Ret ~ ", paste(colnames(select(factors, -Date)), collapse = " + "), sep = ""))
-  print(model_formula)
-  
-  model <- df %>% 
-    gather(key = "port", value = "Ret", -Date) %>%
-    join(factors, by = "Date") %>%
-    group_by(port) %>%
-    do(fit.model = lm(model_formula, data = .))
-  
-  model.coef <- tidy(model, fit.model) # get the coefficients by group in a tidy data_frame
-  model.pred <- augment(model, fit.model) # get the coefficients by group in a tidy data_frame
-  model.stats <- glance(model, fit.model) # get the coefficients by group in a tidy data_frame
-  
-  return(list(model,
-              model.coef,
-              model.pred,
-              model.stats))
-}
 
 # Define models
 ff3.factors <- sorts %>%  select(Date, MktRf, SMB, HML)
@@ -2343,6 +2319,7 @@ save(aai.p.value.stats, file = paste(filepath, "aai.p.value.stats.RData", sep = 
 
 
 # Average absolute intercept over average absolute value of r ####
+# the smaller the better
 library(matrixStats) # for ColMedians
 
 aai.fct.unscaled <- function(model){
@@ -2353,7 +2330,7 @@ aai.fct.unscaled <- function(model){
 aaiOaar.fct <- function(df, model){
   #browser()
   Ri <- df %>% # time series average excess return of portfolio i
-    select(-Day) %>%
+    select(-Date) %>%
     as.matrix %>%
     colMedians(na.rm = TRUE)
   Rbar <- median(Ri, na.rm = T) # cross-section average of Ri
@@ -2570,10 +2547,10 @@ print(aai.stats)
 save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = ""))
 
 # show significance of coefficients
-print(list.ff3.snt[[2]] %>%
-          filter(term == "PMN",
-                 p.value < 0.01) %>% 
-          as.data.frame)
+# print(list.ff3.snt[[2]] %>%
+#           filter(term == "PMN",
+#                  p.value < 0.01) %>% 
+#           as.data.frame)
 
 
 # GRS test statistic for mimicking portfolios ####
@@ -2796,7 +2773,8 @@ load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
 # load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
 
 dataset <- sorts %>% 
-  merge(list.5x5.pf.d[[1]][1:2], by = "Date") %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  merge(list.5x5.pf.d, by = "Date") %>% 
   select(-Date) %>% 
   as.matrix() 
 
@@ -2848,6 +2826,7 @@ generator <- function(data, lookback, delay, min_index, max_index,
                                 lookback / step,
                                 dim(data)[[-1]]))
     targets <- array(0, dim = c(length(rows)))
+    print(dim(samples))
     
     for (j in 1:length(rows)) {
       indices <- seq(rows[[j]] - lookback, rows[[j]] - 1,
@@ -2859,8 +2838,8 @@ generator <- function(data, lookback, delay, min_index, max_index,
   }
 }
 
-lookback <- 52 # How many timesteps back the input data should go? weekly: 4x3 for a quarter
-step <- 12 # The period, in timesteps, at which you sample data
+lookback <- 26 # How many timesteps back the input data should go? weekly: 4x3 for a quarter
+step <- 1 # The period, in timesteps, at which you sample data
 delay <- 1 # How many timesteps in the future the target should be? next week
 batch_size <- 256
 
@@ -2922,7 +2901,7 @@ options(keras.view_metrics = TRUE)
 
 # Linear benchmark model ####
 
-lin.model <- lm(train.data[,ncol(train.data)] ~ Mkt + RF + SMB + HML + RMW + CMA + UMD + PMN, data = as.data.frame(train.data))
+lin.model <- lm(S1.P1 ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
 
 eval_fct <- function(pred, act){
    # browser()
@@ -2961,7 +2940,7 @@ linear.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 linear.history %>% plot() + geom_line()
-linear.history %>% save(file = "linear.history.RData")
+save(linear.history, file = "linear.history.RData")
 
 # plot_model(linear.history)
 # get_weights(linear.history)
@@ -2986,7 +2965,7 @@ base.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 base.history %>% plot() + geom_line()
-base.history %>% save(file = "base.history.RData")
+save(base.history, file = "base.history.RData")
 
 # A first recurrent baseline ####
 
@@ -3007,7 +2986,7 @@ rnn.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 rnn.history %>% plot() + geom_line()
-rnn.history %>% save(file = "rnn.history.RData")
+save(rnn.history, file = "rnn.history.RData")
 
 # Using recurrent dropout to fight overfitting ####
 
@@ -3028,8 +3007,8 @@ rec.drop.history <- model %>% fit_generator(
   validation_data = val_gen,
   validation_steps = val_steps)
 
-# rec.drop.history %>% plot()  + geom_line()
-rec.drop.history %>% save(file = "rec.drop.history.RData")
+rec.drop.history %>% plot()  + geom_line()
+save(rec.drop.history, file = "rec.drop.history.RData")
 
 # Stacking recurrent layers ####
 
@@ -3057,14 +3036,14 @@ stacked.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 stacked.history %>% plot() + geom_line()
-stacked.history %>% save(file = "stacked.history.RData")
+save(stacked.history, file = "stacked.history.RData")
 
 # LSTM ####
 
 model = keras_model_sequential() %>% 
-  layer_lstm(units = 64, input_shape = c(lookback / step, dim(dataset)[-1]), activation = "relu") %>%  
-  layer_dense(units = 32, activation = "relu") %>% 
-  layer_dense(units = 16) %>% 
+  layer_lstm(units = 8, input_shape = c(lookback / step, dim(dataset)[-1]), activation = "relu") %>%  
+  layer_dense(units = 4, activation = "relu") %>% 
+  layer_dense(units = 2) %>% 
   layer_dense(units = 1)
 
 model %>% compile(
@@ -3080,7 +3059,7 @@ lstm.r2.history <- model %>% fit_generator(
   validation_steps = val_steps)
 
 lstm.r2.history %>%  plot() + geom_line()
-lstm.r2.history %>%  save(file = "lstm.r2.history.RData")
+save(lstm.r2.history, file = "lstm.r2.history.RData")
 
 # Evaluate and predict model ####
 (results <- model %>% evaluate_generator(test_gen, steps = test_steps))
