@@ -240,8 +240,8 @@ load(paste(filepath, "crsp.dse.RData", sep = ""))
 load(paste(filepath, "crsp.dsedelist.RData", sep = ""))
 
 data.crsp.d2 <- crsp.dsf %>%
-  merge(crsp.dse, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
-  merge(crsp.dsedelist, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
+  join(crsp.dse, by = c("Day", "permno"), type = "full", match = "all") %>%
+  join(crsp.dsedelist, by = c("Day", "permno"), type = "full", match = "all") %>%
   rename(PERMNO = permno) %>% 
   mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
   mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) 
@@ -593,7 +593,7 @@ Form_CharSizePorts2 <- function(main, size, var, daily) { # streamlined version
   # variable broken by 30-70 percentiles, size broken up at 50 percentile (breakpoints uses NYSE data only)
   # requires Date and exchcd
   # outputs portfolio returns for each period,
-  browser()
+  # browser()
   main.cln <- main %>%
     select(Date, PERMNO, exchcd, !!size, !!var)
   
@@ -679,7 +679,6 @@ save(dt.myFF6.d, file = paste(filepath, "dt.myFF6.d.RData", sep = ""))
 rm(data.both.FF.m, data.crsp.cln.d, data.both.FF.m.unlim, data.crsp.cln.d.unlim)
 
 # Load FF data - Run on local machine ####
-library(xlsx)
 library(dplyr)
 library(zoo)
 setwd("F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R")
@@ -1268,6 +1267,13 @@ data.snt.d <- data.crsp.cln.d %>%
   left_join(TRMI.aggr.d, by = c("PERMNO", "Day")) %>%
   arrange(PERMNO, Day)
 
+# Unit Test
+# data.snt.d.validation <- summary(data.snt.d)
+# save(data.snt.d.validation, file = "data.snt.d.validation.RData")
+load("data.snt.d.validation.RData")
+expect_equal(summary(data.snt.d), data.snt.d.validation)
+rm(data.snt.d.validation)
+
 save(data.snt.d, file = paste(filepath, "data.snt.d.RData", sep = ""))
 rm(TRMI.aggr.d, data.crsp.cln.d)
 
@@ -1278,6 +1284,13 @@ data.snt.m <- data.both.FF.m %>%
   filter(year(Yearmon) > start & year(Yearmon) < end) %>%
   left_join(TRMI.aggr.m, by = c("PERMNO", "Yearmon")) %>% 
   arrange(PERMNO, Yearmon)
+
+# Unit Test
+# data.snt.m.validation <- summary(data.snt.m)
+# save(data.snt.m.validation, file = "data.snt.m.validation.RData")
+load("data.snt.m.validation.RData")
+expect_equal(summary(data.snt.m), data.snt.m.validation)
+rm(data.snt.m.validation)
 
 save(data.snt.m, file = paste(filepath, "data.snt.m.RData", sep = ""))
 rm(TRMI.aggr.m, data.both.FF.m)
@@ -1299,7 +1312,7 @@ data.crsp.cln.w <- data.crsp.cln.d %>%
 save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = ""))
 
 data.snt.w <- data.crsp.cln.w %>%
-  right_join(TRMI.aggr.w, by = c("PERMNO", "Yearweek")) %>%
+  left_join(TRMI.aggr.w, by = c("PERMNO", "Yearweek")) %>%
   arrange(PERMNO, Yearweek) %>%
   mutate(Yearmon = as.yearmon(as.Date(Yearweek)))
 
@@ -1307,6 +1320,13 @@ data.snt.w <- data.snt.m %>%
   select(-c(snt, snt.diff, snt.glo.diff, retadj.1mn, port.weight)) %>%
   right_join(data.snt.w, by = c("PERMNO", "Yearmon")) %>%
   arrange(PERMNO, Yearweek)
+
+# Unit Test
+# data.snt.w.validation <- summary(data.snt.w)
+# save(data.snt.w.validation, file = "data.snt.w.validation.RData")
+load("data.snt.w.validation.RData")
+expect_equal(summary(data.snt.w), data.snt.w.validation)
+rm(data.snt.w.validation)
 
 save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = ""))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
@@ -1350,18 +1370,37 @@ data.snt <- data.snt.m %>%
   rename(Date = Yearmon)
 
 # weekly
-load(paste(filepath, "dt.FF6.d.RData", sep = "" ))
-rf <- dt.FF6.d %>% 
-  select(Day, RF) %>%
-  filter(year(Day) > start & year(Day) < end) %>%
-  mutate(Date = yearweek(as.Date(Day))) %>%
-  group_by(Date) %>%
-  summarize(RF = prod(1 + RF, na.rm = TRUE) - 1)
+load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
+load(paste(filepath, "TRMI.aggr.w.RData", sep = ""))
+load(paste(filepath, "data.snt.m.RData", sep = ""))
 
-load(paste(filepath, "data.snt.w.RData", sep = ""))
+data.crsp.cln.w <- data.crsp.cln.d %>%
+  filter(year(Day) > start & year(Day) < end) %>%
+  mutate(Yearweek = yearweek(as.Date(Day))) %>%
+  arrange(PERMNO, Yearweek) %>%
+  group_by(PERMNO, Yearweek) %>% 
+  summarize(retadj.1mn = prod(1 + retadj.1mn, na.rm = TRUE) - 1,
+            port.weight = mean(port.weight, na.rm = TRUE)) %>% 
+  ungroup
+
+save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = ""))
+
+data.snt.w <- data.crsp.cln.w %>%
+  left_join(TRMI.aggr.w, by = c("PERMNO", "Yearweek")) %>%
+  arrange(PERMNO, Yearweek) %>%
+  mutate(Yearmon = as.yearmon(as.Date(Yearweek)))
+
+data.snt.w <- data.snt.m %>%  
+  select(-c(snt, snt.diff, snt.glo.diff, retadj.1mn, port.weight)) %>%
+  right_join(data.snt.w, by = c("PERMNO", "Yearmon")) %>%
+  mutate(Yearweek = yearweek(Yearweek)) %>% 
+  arrange(PERMNO, Yearweek)
 
 data.snt <- data.snt.w %>%
-  rename(Date = Yearweek)
+  dplyr::mutate(Date = Yearweek)
+
+save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = ""))
+rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
 
 # # # # #
 # Lagged sentiment?
