@@ -63,7 +63,7 @@ library(RPostgres)
 library(tsibble) # for yearweek
 library("tidylog", warn.conflicts = FALSE) # to get stats on operations
 library(neuralnet) #for neural networks
-library(RevoScaleR)
+# library(RevoScaleR)
 library(usethis) #git
 library(testthat) # unit tests
 
@@ -143,8 +143,6 @@ rm(data.comp.funda, data.ccmlink)
 data.comp <- data.ccm %>%
   rename(PERMNO = permno) %>% 
   data.table %>% # ensure col names match crsp's
-  group_by(PERMNO) %>% 
-  ungroup %>% 
   arrange(datadate, PERMNO) %>%
   dplyr::distinct(datadate, PERMNO, .keep_all = TRUE) # hasn't been issue but just in case
 
@@ -165,8 +163,8 @@ data.comp.a <- data.comp %>%
   ungroup %>%
   arrange(datadate, PERMNO) %>%
   select(datadate, PERMNO, naicsh, at, revt, ib, dvc, mib, BE:AstChg) %>% #[CK] REMOVED comp.count
-  mutate_if(is.numeric, funs(ifelse(is.infinite(.), NA, .))) %>% # replace Inf w/ NA's
-  mutate_if(is.numeric, funs(round(., 5))) # round to 5 decimal places (for some reason, 0's not properly coded in some instances)
+  mutate_if(is.numeric, list(~ ifelse(is.infinite(.), NA, .))) %>% # replace Inf w/ NA's
+  mutate_if(is.numeric, list(~ round(., 5))) # round to 5 decimal places (for some reason, 0's not properly coded in some instances)
 
 save(data.comp.a, file = paste(filepath, "data.comp.a.RData", sep = ""))
 rm(data.ccm, data.comp)
@@ -245,15 +243,15 @@ data.crsp.d2 <- crsp.dsf %>%
   merge(crsp.dse, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   merge(crsp.dsedelist, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   rename(PERMNO = permno) %>% 
-  mutate_at(vars(PERMNO, permco, shrcd, exchcd), funs(as.factor)) %>%
-  mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) %>% # create retadj by merging ret and dlret
-  arrange(Day, PERMNO) %>%
-  group_by(PERMNO) %>%    
-  mutate_at(vars(shrcd, exchcd), funs(na.locf(., na.rm = FALSE)))  # fill in NA's with latest available (must sort by Date and group by PERMNO)
+  mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
+  mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) 
 
 save(data.crsp.d2, file = paste(filepath, "data.crsp.d2.RData", sep = ""))
 
-data.crsp.d3 <- data.crsp.d2 %>%
+data.crsp.d3 <- data.crsp.d2 %>% # create retadj by merging ret and dlret
+  arrange(Day, PERMNO) %>%
+  group_by(PERMNO) %>%    
+  mutate_at(vars(shrcd, exchcd), list(~ na.locf(., na.rm = FALSE))) %>% # fill in NA's with latest available (must sort by Date and group by PERMNO)
   mutate(meq = shrout * abs(prc)) %>% # me for each permno
   group_by(Day, permco) %>%
   mutate(ME = sum(meq)) %>% # to calc market cap, merge permnos with same permnco
@@ -270,6 +268,13 @@ save(data.crsp.d4, file = paste(filepath, "data.crsp.d4.RData", sep = ""))
 data.crsp.d <- data.crsp.d4 %>% # keep only permno with largest meq
   ungroup %>%
   dplyr::distinct(Day, PERMNO, .keep_all = T) # hasn't been issue but just in case
+
+# Unit Test
+# data.crsp.d.validation <- summary(data.crsp.d)
+# save(data.crsp.d.validation, file = "data.crsp.d.validation.RData")
+load("data.crsp.d.validation.RData")
+expect_equal(summary(data.crsp.d), data.crsp.d.validation)
+rm(data.crsp.d.validation)
 
 save(data.crsp.d, file = paste(filepath, "data.crsp.d.RData", sep = ""))
 rm(crsp.dse, crsp.dsf, crsp.dsedelist, data.crsp.d2, data.crsp.d3, data.crsp.d4)
@@ -329,6 +334,13 @@ data.crsp.cln.d <- data.crsp.cln.d2 %>%
   rename(retadj.1mn = retadj) %>%
   arrange(Day, PERMNO) %>%
   dplyr::distinct(Day, PERMNO, .keep_all = T) # hasn't been issue but just in case
+
+# Unit Test
+# data.crsp.cln.d.validation <- summary(data.crsp.cln.d)
+# save(data.crsp.cln.d.validation, file = "data.crsp.cln.d.validation.RData")
+load("data.crsp.cln.d.validation.RData")
+expect_equal(summary(data.crsp.cln.d), data.crsp.cln.d.validation)
+rm(data.crsp.cln.d.validation)
 
 save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = ""))
 rm(data.crsp.d, data.crsp.cln.d1, data.crsp.cln.d2, data.crsp.cln.d3)
@@ -392,11 +404,11 @@ data.crsp.m <- crsp.msf %>%
   merge(crsp.mse, by = c("Yearmon", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   merge(crsp.msedelist, by = c("Yearmon", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   rename(PERMNO = permno) %>% 
-  mutate_at(vars(PERMNO, permco, shrcd, exchcd), funs(as.factor)) %>%
+  mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
   mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) %>% # create retadj by merging ret and dlret
   arrange(Yearmon, PERMNO) %>%
   group_by(PERMNO) %>%    
-  mutate_at(vars(shrcd, exchcd), funs(na.locf(., na.rm = FALSE)))  # fill in NA's with latest available (must sort by Date and group by PERMNO)
+  mutate_at(vars(shrcd, exchcd), list(~ na.locf(., na.rm = FALSE)))  # fill in NA's with latest available (must sort by Date and group by PERMNO)
 
 data.crsp.m <- data.crsp.m %>%
   mutate(meq = shrout * abs(prc)) %>% # me for each permno
@@ -407,6 +419,13 @@ data.crsp.m <- data.crsp.m %>%
   slice(1) %>% # keep only permno with largest meq
   ungroup
 
+# Unit Test
+# data.crsp.m.validation <- summary(data.crsp.m)
+# save(data.crsp.m.validation, file = "data.crsp.m.validation.RData")
+load("data.crsp.m.validation.RData")
+expect_equal(summary(data.crsp.m), data.crsp.m.validation)
+rm(data.crsp.m.validation)
+
 save(data.crsp.m, file = paste(filepath, "data.crsp.m.RData", sep = ""))
 rm(crsp.mse, crsp.msf, crsp.msedelist)
 
@@ -416,7 +435,7 @@ rm(crsp.mse, crsp.msf, crsp.msedelist)
 # Keep all CRSP info (drop Compustat if can't find CRSP)
 # Match Compustat and Davis data based on FF methodology (to following year June when data is first known at month end)
 
-data.Davis.bkeq <- read.csv("~/Davis Book Equity.csv")
+data.Davis.bkeq <- read.csv(paste(filepath, "Davis Book Equity.csv", sep = ""))
 data.Davis.bkeq[data.Davis.bkeq  ==  -999 | data.Davis.bkeq  ==  -99.99] <- NA
 data.Davis.bkeq <- data.Davis.bkeq %>%
   mutate(PERMNO = factor(PERMNO)) %>%
@@ -494,7 +513,7 @@ data.both.m <- data.comp.a %>%
   group_by(PERMNO) %>%
   # fill in Compustat and Davis data NA's with latest available for subsequent year (must sort by Date and group by PERMNO)
   # filling max of 11 previous months means gaps may appear when fiscal year end changes (very strict)
-  mutate_at(vars(datadate:Davis.bkeq), funs(na_locf_until(., 11)))
+  mutate_at(vars(datadate:Davis.bkeq), list(~ na_locf_until(., 11)))
   
 save(data.both.m, file = paste(filepath, "data.both.m.RData", sep = "")) 
 # company info has no Date gaps (filled with NA's)
@@ -516,7 +535,7 @@ get.mav <- function(bp,n=2){
   c(bp[1:(n - 1)],rollapply(bp,width = n,prod,align = "right", na.rm = TRUE))  
 }
 
-# load(paste(filepath, "data.both.m.RData", sep = "")) 
+load(paste(filepath, "data.both.m.RData", sep = "")) 
 data.both.FF.m.full <- data.both.m %>%
   group_by(PERMNO) %>%
   mutate(d.shares = (shrout*cfacshr)/(lag(shrout)*lag(cfacshr)) - 1, # change in monthly share count (adjusted for splits)
@@ -536,17 +555,31 @@ data.both.FF.m.full <- data.both.m %>%
          lag.OpIB = lag(OpIB),
          lag.AstChg = lag(AstChg))
 
+# Unit Test
+# data.both.FF.m.full.validation <- summary(data.both.FF.m.full)
+# save(data.both.FF.m.full.validation, file = "data.both.FF.m.full.validation.RData")
+load("data.both.FF.m.full.validation.RData")
+expect_equal(summary(data.both.FF.m.full), data.both.FF.m.full.validation)
+rm(data.both.FF.m.full.validation)
+
 save(data.both.FF.m.full, file = paste(filepath, "data.both.FF.m.full.RData", sep = ""))
 
 data.both.FF.m <- data.both.FF.m.full %>%
-  mutate_at(vars(d.shares:lag.AstChg), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+  mutate_at(vars(d.shares:lag.AstChg), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
   select(Yearmon, datadate, PERMNO, shrout, naicsh, exchcd, prc, vol, retadj.1mn, d.shares, ME, port.weight, # [CK] REMOVED comp.count
          ret.12t2, at:AstChg, ME.Jun:lag.AstChg) %>%
   arrange(Yearmon, PERMNO) %>%
   group_by(PERMNO) %>%
-  mutate_at(vars(ME.Jun:CFP.FF, lag.ME.Jun:lag.AstChg), funs(na_locf_until(., 11))) %>%
+  mutate_at(vars(ME.Jun:CFP.FF, lag.ME.Jun:lag.AstChg), list(~ na_locf_until(., 11))) %>%
   ungroup %>%
   mutate(port.weight = ifelse(is.na(port.weight), 0, port.weight)) # necessary to avoid NAs for weighted ret calc
+
+# Unit test
+# data.both.FF.m.validation <- summary(data.both.FF.m)
+# save(data.both.FF.m.validation, file = "data.both.FF.m.validation.RData")
+load("data.both.FF.m.validation.RData")
+expect_equal(summary(data.both.FF.m), data.both.FF.m.validation)
+rm(data.both.FF.m.validation)
 
 save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = ""))
 rm(data.both.m, data.both.FF.m.full)
@@ -560,7 +593,7 @@ Form_CharSizePorts2 <- function(main, size, var, daily) { # streamlined version
   # variable broken by 30-70 percentiles, size broken up at 50 percentile (breakpoints uses NYSE data only)
   # requires Date and exchcd
   # outputs portfolio returns for each period,
-  # browser()
+  browser()
   main.cln <- main %>%
     select(Date, PERMNO, exchcd, !!size, !!var)
   
@@ -582,7 +615,7 @@ Form_CharSizePorts2 <- function(main, size, var, daily) { # streamlined version
     select(Day, Date, PERMNO, port.weight, retadj.1mn) %>%
     merge(main.rank, by = c("Date", "PERMNO"), all.x = TRUE) %>%
     group_by(PERMNO) %>%    
-    mutate_at(vars(Port), funs(na.locf(., na.rm = FALSE)))
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE)))
   
   Ret <- df %>% # name 2 x 3 size-var portfolios
     group_by(Day, Port) %>%
@@ -620,22 +653,30 @@ Form_FF6Ports <- function(monthly, daily) {
   return(output)
 }
 
-# load(paste(filepath, "data.both.FF.m.RData", sep = ""))
+load(paste(filepath, "data.both.FF.m.RData", sep = ""))
 load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
 
 start <- 1997
 end <- 2018
 
-data.both.FF.m <- data.both.FF.m %>% filter(year(Date) > start & year(Date) < end)
+data.both.FF.m.unlim <- data.both.FF.m
+data.both.FF.m <- data.both.FF.m %>% 
+  filter(year(Yearmon) > start & year(Yearmon) < end) %>% 
+  mutate(Date = Yearmon)
 save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = ""))
+save(data.both.FF.m.unlim, file = paste(filepath, "data.both.FF.m.unlim.RData", sep = ""))
 
-data.crsp.cln.d <- data.crsp.cln.d %>% filter(year(Day) > start & year(Day) < end)
+data.crsp.cln.d.unlim <- data.crsp.cln.d
+data.crsp.cln.d <- data.crsp.cln.d %>% 
+  filter(year(Day) > start & year(Day) < end) %>% 
+  mutate(Date = Day)
 save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = ""))
+save(data.crsp.cln.d.unlim, file = paste(filepath, "data.crsp.cln.d.unlim.RData", sep = ""))
 
 dt.myFF6.d <- Form_FF6Ports(data.both.FF.m, data.crsp.cln.d) 
 
 save(dt.myFF6.d, file = paste(filepath, "dt.myFF6.d.RData", sep = ""))
-rm(data.both.FF.m, data.crsp.cln.d)
+rm(data.both.FF.m, data.crsp.cln.d, data.both.FF.m.unlim, data.crsp.cln.d.unlim)
 
 # Load FF data - Run on local machine ####
 library(xlsx)
@@ -653,7 +694,7 @@ load(paste(filepath, "wb.daily.RData", sep = ""))
 dt.FF6.d <- wb.daily %>%
   mutate(Day = ymd(Date),
          Mkt = Mkt.RF + RF) %>%
-  mutate_at(vars(-Day, -Date), funs(./100)) %>%
+  mutate_at(vars(-Day, -Date), list(~ ./100)) %>%
   select(-Date) %>%
   arrange(Day) 
 
@@ -803,7 +844,7 @@ load(paste(filepath, "wb.RData", sep = ""))
 dt.FF6.m <- wb %>%
   mutate(Date = as.yearmon(ymd(paste0(Date,28))),
          Mkt = MktRF + RF) %>%
-  mutate_at(vars(-Date), funs(./100)) %>%
+  mutate_at(vars(-Date), list( ~ ./100)) %>%
   arrange(Date) 
 
 start <- 1998
@@ -1051,8 +1092,8 @@ TRMI_man <- function(df){
             #Fill_TS_NAs_TRMI(quo(Day)) %>%
             group_by(PERMNO) %>%
             arrange(Day) %>%
-            mutate_at(vars(sentiment), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(sentiment), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(sentiment), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(sentiment), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = na.locf0(sentiment)) %>% #na.locf0 / replace_na(sentiment, 0)
             rename(snt = sentiment) %>% # added if previous was commented out
             select(PERMNO, Day, snt) %>%
@@ -1071,8 +1112,8 @@ TRMI_aggr_level <- function(df){
             #Fill_TS_NAs_TRMI(quo(Yearmon)) %>%
             group_by(PERMNO) %>%
             arrange(Yearmon) %>%
-            mutate_at(vars(snt), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = replace_na(snt, 0)) %>% #na.locf0
             select(PERMNO, Yearmon, snt) %>% 
             ungroup
@@ -1091,8 +1132,8 @@ TRMI_aggr_level_w <- function(df){
             #Fill_TS_NAs_TRMI(quo(Yearweek)) %>%  
             group_by(PERMNO) %>%
             arrange(Yearweek) %>%
-            mutate_at(vars(snt), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = na.locf0(snt)) %>% #na.locf0 / replace_na(snt, 0) / 
             select(PERMNO, Yearweek, snt) %>% 
             ungroup
@@ -1106,8 +1147,8 @@ TRMI_aggr_diff_d <- function(df){
             arrange(PERMNO, Day) %>%
             group_by(PERMNO) %>%
             mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(snt))) %>%
-            mutate_at(vars(snt.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1120,8 +1161,8 @@ TRMI_aggr_diff_m <- function(df){
             arrange(PERMNO, Yearmon) %>%
             group_by(PERMNO) %>%
             mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(log(aggr.snt)))) %>%
-            mutate_at(vars(snt.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1134,8 +1175,8 @@ TRMI_aggr_diff_w <- function(df){
             arrange(PERMNO, Yearweek) %>%
             group_by(PERMNO) %>%
             mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(log(aggr.snt)))) %>%
-            mutate_at(vars(snt.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1147,8 +1188,8 @@ TRMI_aggr_glo_diff_d <- function(df){
             TRMI_man %>% # aggregate data to monthly
             group_by(PERMNO) %>%
             mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1160,8 +1201,8 @@ TRMI_aggr_glo_diff_m <- function(df){
             TRMI_aggr_level %>% # aggregate data to monthly
             group_by(PERMNO) %>%
             mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1173,8 +1214,8 @@ TRMI_aggr_glo_diff_w <- function(df){
             TRMI_aggr_level_w %>% 
             group_by(PERMNO) %>%
             mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.glo.diff), funs(ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             select(-snt) %>%
             ungroup
   )
@@ -1369,7 +1410,7 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
     mutate(Size = ifelse(!!size < size.S20, "S1", ifelse(!!size < size.S40, "S2", ifelse(!!size < size.S60, "S3", ifelse(!!size < size.S80, "S4", "S5")))), #small big
            Var = ifelse(!!var < var.P20, "P1", ifelse(!!var < var.P40, "P2", ifelse(!!var < var.P60, "P3", ifelse(!!var < var.P80, "P4", "P5"))))) %>% #low high
     group_by(PERMNO) %>% # *NEW
-    mutate_at(vars(Size, Var), funs(na.locf(., na.rm = FALSE))) %>%
+    mutate_at(vars(Size, Var), list(~ na.locf(., na.rm = FALSE))) %>%
     mutate(Port = paste(Size, Var, sep = ".")) %>%
     select(Date, PERMNO, Port)
   
@@ -1377,7 +1418,7 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO")) %>% 
     group_by(PERMNO) %>%    
-    mutate_at(vars(Port), funs(na.locf(., na.rm = FALSE))) 
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE))) 
   
   Ret <- df %>% 
     group_by(Date, Port) %>%
@@ -1385,7 +1426,7 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
     spread(Port, ret.port) %>%
     ungroup %>% # transpose portfolios expressed as rows into seperate columns
     join(rf, by = "Date") %>% 
-    mutate_at(vars(-Date), funs((. - RF))) %>% #compute excess returns
+    mutate_at(vars(-Date), list(~ (. - RF))) %>% #compute excess returns
     select(-RF)
   
   return(Ret)
@@ -1555,7 +1596,7 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
            Var3 = ifelse(!!var3 < var3.Q33, "P1", ifelse(!!var3 < var3.Q66, "P2", "P3")), 
            SNT = ifelse(!!snt < snt.Q33, "N", ifelse(!!snt < snt.Q66, "M", "P"))) %>% #positive mid negative sentiment
     group_by(PERMNO) %>%
-    mutate_at(vars(Size, Value, Var3, SNT), funs(na.locf(., na.rm = FALSE))) %>%
+    mutate_at(vars(Size, Value, Var3, SNT), list(~ na.locf(., na.rm = FALSE))) %>%
     mutate(Port = paste(Size, Value, Var3, SNT, sep = ".")) %>%
     select(Date, PERMNO, Port)
   
@@ -1563,7 +1604,7 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO"), all.x = TRUE) %>% 
     group_by(PERMNO) %>%    
-    mutate_at(vars(Port), funs(na.locf(., na.rm = FALSE))) 
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE))) 
   
   Ret <- df %>% 
     group_by(Date, Port) %>%
@@ -1571,7 +1612,7 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
     spread(Port, ret.port) %>% # transpose portfolios expressed as rows into seperate columns
     ungroup %>%
     join(rf, by = "Date") %>% 
-    mutate_at(vars(-Date), funs((. - RF))) %>%
+    mutate_at(vars(-Date), list(~ (. - RF))) %>%
     select(-RF)
   
   return(Ret)
@@ -1722,14 +1763,14 @@ Form_2x3_Factors_new <- function(main, size, var) { # streamlined version
     mutate(Size = ifelse(!!size < size.Med, "Small", "Big"),
            Var = ifelse(!!var < var.P30, "Low", ifelse(!!var > var.P70, "High", "Neutral"))) %>%
     group_by(PERMNO) %>% #* NEW
-    mutate_at(vars(Size, Var), funs(na.locf(., na.rm = FALSE))) %>%
+    mutate_at(vars(Size, Var), list(~ na.locf(., na.rm = FALSE))) %>%
     mutate(Port = paste(Size, Var, sep = "."))
   
   df <- main %>%
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO")) %>%
     group_by(PERMNO) %>%    
-    mutate_at(vars(Port), funs(na.locf(., na.rm = FALSE)))
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE)))
   
   Ret <- df %>% # name 2 x 3 size-var portfolios
     group_by(Date, Port) %>%
@@ -1820,14 +1861,14 @@ Form_2x2x2x2x2x2_Factors_new <- function(main, size, BM, OP, Inv, Mom, Snt) { # 
            Mom = ifelse(!!Mom < Mom.P50, "D","U"),
            Snt = ifelse(!!Snt < Snt.P50, "M","P")) %>%    # M used instead of N to avoid confusion with NA later
     group_by(PERMNO) %>%
-    mutate_at(vars(Size, BM, OP, Inv, Mom, Snt), funs(na.locf(., na.rm = FALSE))) %>%
+    mutate_at(vars(Size, BM, OP, Inv, Mom, Snt), list(~ na.locf(., na.rm = FALSE))) %>%
     mutate(Port = paste(Size, BM, OP, Inv, Mom, Snt, sep = "."))
   
   df <- main %>%
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO")) %>%
     group_by(PERMNO) %>%    
-    mutate_at(vars(Port), funs(na.locf(., na.rm = FALSE)))
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE)))
   
   pfs <- df %>% # name 2x2x2x2x2x2 portfolios
     group_by(Date, Port) %>%
@@ -3308,23 +3349,23 @@ factor_sum_stats <- function(df) {
   
   snt.factors.mean <- df.scaled %>%
     select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
-    summarize_all(funs(mean(., na.rm = TRUE)))
+    summarize_all(list(~ mean(., na.rm = TRUE)))
   rownames(snt.factors.mean) <- "Mean"
   
   snt.factors.sd <- df.scaled %>%
     select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
-    summarize_all(funs(sd(., na.rm = TRUE)))  
+    summarize_all(list(~ sd(., na.rm = TRUE)))  
   rownames(snt.factors.sd) <- "Std. dev"
   
   snt.factors.t.test <- df.scaled %>%
     select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
-    summarize_all(funs(t.test(.)[1])) 
+    summarize_all(list(~ t.test(.)[1])) 
   rownames(snt.factors.t.test) <- "t-Statistic"
   
   #only for reference
   snt.factors.p.value <- df.scaled %>%
     select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
-    summarize_all(funs(t.test(.)[3])) 
+    summarize_all(list(~ t.test(.)[3])) 
   rownames(snt.factors.p.value) <- "p.value"
   print(snt.factors.p.value)
   
