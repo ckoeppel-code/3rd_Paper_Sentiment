@@ -1310,6 +1310,9 @@ data.crsp.cln.w <- data.crsp.cln.d %>%
             port.weight = mean(port.weight, na.rm = TRUE)) %>% 
   ungroup
 
+# data.snt.w %>% filter(PERMNO == 17144) %>% as.data.frame() %>% head(20)
+# TRMI.aggr.d %>% filter(PERMNO == 17144) %>% as.data.frame() %>% head(20)
+
 save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = ""))
 
 data.snt.w <- data.crsp.cln.w %>%
@@ -2894,26 +2897,27 @@ for (i in 1:1) {
 print(OnemR2.stats)
 save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = ""))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Regressions of single stocks directly on sentiment  ####
 
 load(paste(filepath, "sorts.RData", sep = ""))
 load(paste(filepath, "data.snt.RData", sep = ""))
 
 stock.ret <- data.snt %>%
-  select(Date, PERMNO, Ret = retadj.1mn, snt)
-  
+  select(Date, PERMNO, Ret = retadj.1mn, snt, snt.glo.diff) %>% 
+  mutate(snt.squared = snt^2,
+         snt.third = snt^3) %>% 
+  mutate_at(vars(snt.glo.diff, snt.squared, snt.third), list(~ na.locf(., na.rm = FALSE)))
 
 y <- "stocks" #indicator for WRDS
 
 run_model_stocks_direct_sentiment <- function(df, factors){
-   # browser()
-  model_formula <- as.formula(paste("Ret ~ snt + ", paste(colnames(select(factors, -Date)), collapse = " + "), sep = ""))
+    # browser()
+  model_formula <- as.formula(paste("Ret ~ snt.glo.diff + ", paste(colnames(select(factors, -Date)), collapse = " + "), sep = ""))
   print(model_formula)
   
   model <- df %>%
     join(factors, by = "Date") %>%
-    filter(complete.cases(.)) %>%
+    # filter(complete.cases(.)) %>%
     group_by(PERMNO) %>%
     do(fit.model = lm(model_formula, data = .))
   
