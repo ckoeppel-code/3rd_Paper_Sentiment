@@ -1399,6 +1399,14 @@ data.snt.w <- data.snt.m %>%
 data.snt <- data.snt.w %>%
   dplyr::mutate(Date = Yearweek)
 
+load(paste(filepath, "dt.FF6.d.RData", sep = "" ))
+rf <- dt.FF6.d %>% 
+  select(Day, RF) %>%
+  filter(year(Day) > start & year(Day) < end) %>%
+  mutate(Date = yearweek(as.Date(Day))) %>%
+  group_by(Date) %>%
+  summarize(RF = prod(1 + RF, na.rm = TRUE) - 1)
+
 save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = ""))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
 
@@ -1445,8 +1453,9 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
   
   # calculate size and var portfolio returns
   main.rank <- main.cln %>%
-    left_join(Bkpts.NYSE, by = "Date") %>%
-    mutate(Size = ifelse(!!size < size.S20, "S1", ifelse(!!size < size.S40, "S2", ifelse(!!size < size.S60, "S3", ifelse(!!size < size.S80, "S4", "S5")))), #small big
+    left_join(Bkpts.NYSE, by = "Date") %>% #format was lost due to join
+    mutate(Date = yearweek(Date), #format was lost due to join
+           Size = ifelse(!!size < size.S20, "S1", ifelse(!!size < size.S40, "S2", ifelse(!!size < size.S60, "S3", ifelse(!!size < size.S80, "S4", "S5")))), #small big
            Var = ifelse(!!var < var.P20, "P1", ifelse(!!var < var.P40, "P2", ifelse(!!var < var.P60, "P3", ifelse(!!var < var.P80, "P4", "P5"))))) %>% #low high
     group_by(PERMNO) %>% # *NEW
     mutate_at(vars(Size, Var), list(~ na.locf(., na.rm = FALSE))) %>%
@@ -1457,14 +1466,16 @@ Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO")) %>% 
     group_by(PERMNO) %>%    
+    mutate(Date = yearweek(Date)) %>% #format was lost due to join,
     mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE))) 
   
   Ret <- df %>% 
     group_by(Date, Port) %>%
     summarize(ret.port = weighted.mean(coalesce(retadj.1mn,0), coalesce(port.weight,0), na.rm = TRUE)) %>% # calc value-weighted returns
-    spread(Port, ret.port) %>%
+    spread(key = Port, value = ret.port) %>%
     ungroup %>% # transpose portfolios expressed as rows into seperate columns
-    join(rf, by = "Date") %>% 
+    plyr::join(rf, by = "Date") %>% 
+    mutate(Date = yearweek(Date)) %>%  #format was lost due to join,
     mutate_at(vars(-Date), list(~ (. - RF))) %>% #compute excess returns
     select(-RF)
   
@@ -1552,13 +1563,14 @@ list.5x5.raw2.d <- list(Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun
                         Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.BM.FF), quo(snt.diff), rf),
                         Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.OpIB), quo(snt.diff), rf),
                         Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.AstChg), quo(snt.diff), rf),
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ret.12t2), quo(snt.diff), rf),
+                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ret.12t2), quo(snt.diff), rf)
                         
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf),
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.BM.FF), quo(snt), rf),
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.OpIB), quo(snt), rf),
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.AstChg), quo(snt), rf),
-                        Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ret.12t2), quo(snt), rf))
+                        # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf),
+                        # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.BM.FF), quo(snt), rf),
+                        # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.OpIB), quo(snt), rf),
+                        # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.AstChg), quo(snt), rf),
+                        # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ret.12t2), quo(snt), rf)
+                        )
 
 save(list.5x5.raw2.d, file = paste(filepath, "list.5x5.raw2.d.RData", sep = ""))
 
@@ -1578,13 +1590,14 @@ attr(table_5x52.d, "subheadings") <- c("Panel A: Size-SNT Portfolios",
                                        "Reference Previous Day: B/M-SNT Portfolios",
                                        "Reference Previous Day: OP-SNT Portfolios",
                                        "Reference Previous Day: Inv-SNT Portfolios",
-                                       "Reference Previous Day: Mom-SNT Portfolios",
+                                       "Reference Previous Day: Mom-SNT Portfolios"
                                        
-                                       "Reference Sentiment Level: Size-SNT Portfolios",
-                                       "Reference Sentiment Level: B/M-SNT Portfolios",
-                                       "Reference Sentiment Level: OP-SNT Portfolios",
-                                       "Reference Sentiment Level: Inv-SNT Portfolios",
-                                       "Reference Sentiment Level: Mom-SNT Portfolios")
+                                       # "Reference Sentiment Level: Size-SNT Portfolios",
+                                       # "Reference Sentiment Level: B/M-SNT Portfolios",
+                                       # "Reference Sentiment Level: OP-SNT Portfolios",
+                                       # "Reference Sentiment Level: Inv-SNT Portfolios",
+                                       # "Reference Sentiment Level: Mom-SNT Portfolios"
+                                       )
 
 table_5x5.xtL2.d <- table_5x52.d %>% 
   xtableList(colNames = FALSE,
@@ -1630,7 +1643,8 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
   # calculate size and var portfolio returns
   main.rank <- main.cln %>%
     left_join(Bkpts.NYSE, by = "Date") %>%
-    mutate(Size = ifelse(!!size < size.Q50, "S","B"), #small big
+    mutate(Date = yearweek(Date),
+           Size = ifelse(!!size < size.Q50, "S","B"), #small big
            Value = ifelse(!!value < value.Q50, "L","H"), #low high
            Var3 = ifelse(!!var3 < var3.Q33, "P1", ifelse(!!var3 < var3.Q66, "P2", "P3")), 
            SNT = ifelse(!!snt < snt.Q33, "N", ifelse(!!snt < snt.Q66, "M", "P"))) %>% #positive mid negative sentiment
@@ -1642,6 +1656,7 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
   df <- main %>%
     select(Date, PERMNO, port.weight, retadj.1mn) %>%
     left_join(main.rank, by = c("Date", "PERMNO"), all.x = TRUE) %>% 
+    mutate(Date = yearweek(Date)) %>% 
     group_by(PERMNO) %>%    
     mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE))) 
   
@@ -1651,6 +1666,7 @@ Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # st
     spread(Port, ret.port) %>% # transpose portfolios expressed as rows into seperate columns
     ungroup %>%
     join(rf, by = "Date") %>% 
+    mutate(Date = yearweek(Date)) %>% 
     mutate_at(vars(-Date), list(~ (. - RF))) %>%
     select(-RF)
   
@@ -1666,7 +1682,7 @@ construct_portfolio <- function(df){
 }
 
 construct_2x2x3x3_table <- function(df){
-  #browser()
+  # browser()
   rounder <- 10000 # 100 for %, 10000 for bps
   # small Size, small B/M
   output.S.L <- df %>% 
@@ -3368,20 +3384,17 @@ sorts %>% check_factors(dt.FF6, start, end)
 rm(dt.FF6, snt.sorts.2x2x2x2x2x2, sorts.2x3, snt.sorts.2x2x2x2x2x2.diff, snt.sorts.2x2x2x2x2x2.lvl, sorts.2x3.diff, sorts.2x3.lvl)
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Run statistics on factors  ####
-load(paste(filepath, "snt.sorts.RData", sep = ""))
-load(paste(filepath, "sorts.RData", sep = ""))
+load(paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = ""))
+load(paste(filepath, "sorts.2x3.RData", sep = ""))
 load(paste(filepath, "dt.FF6.RData", sep = ""))
 
 snt.sorts <- dt.FF6 %>%
-  select(Date, RF, Mkt.RF) %>%
+  select(Date, RF, MktRF) %>%
   merge(snt.sorts.2x2x2x2x2x2, by = "Date", all.y = TRUE)
 
 sorts <- dt.FF6 %>%
-  select(Date, RF, Mkt.RF) %>%
+  select(Date, RF, MktRF) %>%
   merge(sorts.2x3, by = "Date", all.y = TRUE) 
-
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "snt.sorts.RData", sep = ""))
 
 factor_sum_stats <- function(df) {
   df.scaled <- df %>% select(-Date) * 10000 # 100 to get percentage returns, 10000 for bps
@@ -3456,6 +3469,8 @@ factor_sum_stats <- function(df) {
 
 snt.sorts %>% factor_sum_stats
 sorts %>% factor_sum_stats
+
+rm(snt.sorts.2x2x2x2x2x2, dt.FF6, sorts.2x3, sorts, snt.sorts)
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Run regressions of one factor against the others ####
