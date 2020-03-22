@@ -2894,6 +2894,80 @@ for (i in 1:1) {
 print(OnemR2.stats)
 save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = ""))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
+# Regressions of single stocks directly on sentiment  ####
+
+load(paste(filepath, "sorts.RData", sep = ""))
+load(paste(filepath, "data.snt.RData", sep = ""))
+
+stock.ret <- data.snt %>%
+  select(Date, PERMNO, Ret = retadj.1mn, snt)
+  
+
+y <- "stocks" #indicator for WRDS
+
+run_model_stocks_direct_sentiment <- function(df, factors){
+   # browser()
+  model_formula <- as.formula(paste("Ret ~ snt + ", paste(colnames(select(factors, -Date)), collapse = " + "), sep = ""))
+  print(model_formula)
+  
+  model <- df %>%
+    join(factors, by = "Date") %>%
+    filter(complete.cases(.)) %>%
+    group_by(PERMNO) %>%
+    do(fit.model = lm(model_formula, data = .))
+  
+  model.coef <- tidy(model, fit.model) # get the coefficients by group in a tidy data_frame
+  model.pred <- augment(model, fit.model) # get the coefficients by group in a tidy data_frame
+  model.stats <- glance(model, fit.model) # get the coefficients by group in a tidy data_frame
+  
+  return(list(model,
+              model.coef,
+              model.pred,
+              model.stats))
+}
+
+# Define models
+ff3.factors <- sorts %>%  select(Date, MktRf, SMB, HML)
+ff3.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, PMN) 
+ff5.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA)
+ff5.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, PMN)
+ch4.factors <- sorts %>% select(Date, MktRf, SMB, HML, UMD)
+ch4.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, UMD, PMN)
+full.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, UMD)
+full.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN)
+
+# Run models
+list.ff3 <- stock.ret %>% run_model_stocks(ff3.factors)
+list.ff3.snt <- stock.ret %>% run_model_stocks_direct_sentiment(ff3.snt.factors)
+list.ff5 <- stock.ret %>% run_model_stocks(ff5.factors)
+list.ff5.snt <- stock.ret %>% run_model_stocks_direct_sentiment(ff5.snt.factors)
+list.ch4 <- stock.ret %>% run_model_stocks(ch4.factors)
+list.ch4.snt <- stock.ret %>% run_model_stocks_direct_sentiment(ch4.snt.factors)
+list.full <- stock.ret %>% run_model_stocks(full.factors)
+list.full.snt <- stock.ret %>% run_model_stocks_direct_sentiment(full.snt.factors)
+
+# Save models
+# save(list.ff3, file = paste(filepath, "list.ff3.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ff3.snt, file = paste(filepath, "list.ff3.snt.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ff5, file = paste(filepath, "list.ff5.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ff5.snt, file = paste(filepath, "list.ff5.snt.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ch4, file = paste(filepath, "list.ch4.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ch4.snt, file = paste(filepath, "list.ch4.snt.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.full, file = paste(filepath, "list.full.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.full.snt, file = paste(filepath, "list.full.snt.stocks.sorts.glo.diff.RData", sep = ""))
+
+# load models if needed
+# load(file = paste(filepath, "list.ff3.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ff3.snt.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ff5.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ff5.snt.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ch4.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ch4.snt.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.full.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.full.snt.stocks.RData", sep = ""))
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Neural Network ####
 filepath = getwd()
 
