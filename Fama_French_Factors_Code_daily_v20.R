@@ -66,6 +66,7 @@ library(neuralnet) #for neural networks
 # library(RevoScaleR)
 library(usethis) #git
 library(testthat) # unit tests
+library(qdapTools) # for list to df transformations
 
 
 setwd("/scratch/unisg/ck/new_weekly_lagged/")
@@ -2106,7 +2107,7 @@ load(paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = ""))
 load(paste(filepath, "sorts.2x3.lvl.RData", sep = ""))
 
 sort.selector <- 1 #1: glo.diff 2: diff 3: level
-factor.selector <- 1  #1: 2x3 sorts, 2: 2x2x2x2x2x2 sorts
+factor.selector <- 2  #1: 2x3 sorts, 2: 2x2x2x2x2x2 sorts
 
 if (sort.selector  ==  1 && factor.selector == 1) {
   sorts <- sorts.2x3
@@ -2186,15 +2187,21 @@ list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
 
 # Model performance on factor 25 mimicking portfolios - sentiment split ####
 
+sorts %<>% 
+  na.omit() %>% 
+  mutate(orthoPMN = lm(PMN ~ MktRf + SMB + HML + RMW + CMA + UMD, data = .)$residuals,
+         orthoPMNP = lm(PMNP ~ MktRf + SMB + HML + RMW + CMA + UMD, data = .)$residuals,
+         orthoPMNN = lm(PMNN ~ MktRf + SMB + HML + RMW + CMA + UMD + orthoPMNP, data = .)$residuals)
+
 # Define models
 ff3.factors <- sorts %>%  select(Date, MktRf, SMB, HML)
-ff3.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, PMNP, PMNN)
+ff3.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, orthoPMNP, orthoPMNN)
 ff5.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA)
-ff5.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, PMNP, PMNN)
+ff5.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, orthoPMNP, orthoPMNN)
 ch4.factors <- sorts %>% select(Date, MktRf, SMB, HML, UMD)
-ch4.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, UMD, PMNP, PMNN)
+ch4.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, UMD, orthoPMNP, orthoPMNN)
 full.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, UMD)
-full.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMNP, PMNN)
+full.snt.factors <- sorts %>% select(Date, MktRf, SMB, HML, RMW, CMA, UMD, orthoPMNP, orthoPMNN)
 
 # stats.calc <- function(df){
 #   return(df[[3]] %>%
@@ -2220,6 +2227,10 @@ list.ch4 <- list.5x5.pf.d %>% lapply(run_model, ch4.factors)
 list.ch4.snt <- list.5x5.pf.d %>% lapply(run_model, ch4.snt.factors)
 list.full <- list.5x5.pf.d %>% lapply(run_model, full.factors)
 list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
+
+as.data.frame(list.ff3.snt[[1]][[2]] %>% 
+                filter(term %in% c("orthoPMNP", "orthoPMNN")) %>% 
+                filter(p.value < 0.1))
 
 # save models
 # save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = ""))
@@ -2308,12 +2319,38 @@ list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
 # Average absolute intercept ####
 # the smaller the better
 
+# aai.fct <- function(model){
+#   #browser()
+#   
+#   intercepts <- model[[2]] %>% 
+#     filter(term == "(Intercept)") %>% 
+#     select(estimate) %>% 
+#     ungroup() 
+#   
+#   # print(summary(intercepts))
+#   
+#   aai <- intercepts %>% 
+#     summarize(aai = mean(abs(estimate))*10000)
+#   
+#   return(aai)
+#   
+#   # mean(abs(model[[2]]$estimate[which(model[[2]]$term == "(Intercept)")])) * 10000#10000 for bps, 100 for %
+# }
+# 
+# aai.stats <- list(list.ff3 %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.ff3.snt %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.ff5 %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.ff5.snt %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.ch4 %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.ch4.snt %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.full %>% lapply(aai.fct) %>% list2df() %>% select(X1),
+#                   list.full.snt %>% lapply(aai.fct) %>% list2df() %>% select(X1)
+# )
+
 aai.fct <- function(model){
   #browser()
   mean(abs(model[[2]]$estimate[which(model[[2]]$term == "(Intercept)")])) * 10000#10000 for bps, 100 for %
 }
-
-aai.stats <- list()
 
 for (i in 1:length(list.ff3)) {
   aai.stats[[i]] <- rbind(
@@ -2328,17 +2365,21 @@ for (i in 1:length(list.ff3)) {
   )
 }
 
+list.ff3[[1]][[2]] %>% filter(term == "(Intercept)")
+list.ff3.snt[[1]][[2]] %>% filter(term == "(Intercept)")
+list.ff3.snt[[1]][[2]] %>% filter(term %in% c("orthoPMNP", "orthoPMNN"))
+
 print(aai.stats)
 save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = ""))
 
-# show significance of coefficients
-for (i in 1:length(list.ff3)) {
-print(list.ff3.snt[[i]][[2]] %>%
-  filter(term == "PMN" | term == "squaredSNT" | term == "thirdSNT" | term == "fourthSNT",
-  # filter(term == "PMN" | term == "PMNN" | term == "PMNP",
-         p.value < 0.05) %>% 
-  as.data.frame)
-}
+# # show significance of coefficients
+# for (i in 1:length(list.ff3)) {
+# print(list.ff3.snt[[i]][[2]] %>%
+#   filter(term == "PMN" | term == "squaredSNT" | term == "thirdSNT" | term == "fourthSNT",
+#   # filter(term == "PMN" | term == "PMNN" | term == "PMNP",
+#          p.value < 0.05) %>% 
+#   as.data.frame)
+# }
 
 # GRS test statistic for mimicking portfolios ####
 # test cannot handle NA value
@@ -3400,29 +3441,24 @@ factor_sum_stats <- function(df) {
   df.scaled <- df %>% select(-Date) * 10000 # 100 to get percentage returns, 10000 for bps
   
   snt.factors.mean <- df.scaled %>%
-    select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
     summarize_all(list(~ mean(., na.rm = TRUE)))
   rownames(snt.factors.mean) <- "Mean"
   
   snt.factors.sd <- df.scaled %>%
-    select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
     summarize_all(list(~ sd(., na.rm = TRUE)))  
   rownames(snt.factors.sd) <- "Std. dev"
   
   snt.factors.t.test <- df.scaled %>%
-    select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
     summarize_all(list(~ t.test(.)[1])) 
   rownames(snt.factors.t.test) <- "t-Statistic"
   
   #only for reference
   snt.factors.p.value <- df.scaled %>%
-    select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
     summarize_all(list(~ t.test(.)[3])) 
   rownames(snt.factors.p.value) <- "p.value"
   print(snt.factors.p.value)
   
   snt.factors.corr <- df.scaled %>%
-    select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>%
     as.matrix() %>%
     rcorr(type = "spearman")
   
@@ -3468,7 +3504,9 @@ factor_sum_stats <- function(df) {
 }
 
 snt.sorts %>% factor_sum_stats
-sorts %>% factor_sum_stats
+sorts %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN, PMNP, PMNN) %>% 
+  factor_sum_stats
 
 rm(snt.sorts.2x2x2x2x2x2, dt.FF6, sorts.2x3, sorts, snt.sorts)
 
