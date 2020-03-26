@@ -2110,7 +2110,7 @@ load(paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = ""))
 load(paste(filepath, "sorts.2x3.lvl.RData", sep = ""))
 
 sort.selector <- 1 #1: glo.diff 2: diff 3: level
-factor.selector <- 2  #1: 2x3 sorts, 2: 2x2x2x2x2x2 sorts
+factor.selector <- 1  #1: 2x3 sorts, 2: 2x2x2x2x2x2 sorts
 
 if (sort.selector  ==  1 && factor.selector == 1) {
   sorts <- sorts.2x3
@@ -2987,13 +2987,17 @@ load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
 # load(paste(filepath, "sorts.RData", sep = ""))
 # load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
 
-dataset <- sorts %>% 
-  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
-  merge(list.5x5.pf.d, by = "Date") %>% 
-  select(-Date) %>% 
-  as.matrix() 
+factor.portfolios <- list.5x5.pf.d %>% 
+  list_df2df() %>% 
+  gather(key = port, value = ret, -c(Date, X1)) %>% 
+  as_tibble()
 
-data = dataset
+data <- sorts %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  inner_join(factor.portfolios, by = "Date") %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  group_by(X1, port) 
 
 # reverse scaling for later 
 # data2 <- t(t(data) * std + mean)
@@ -3003,16 +3007,24 @@ no.train <- 0.50
 no.valid <- 0.25 
 no.test <- 0.25
 
-min.train <- 1
-max.train <- round(nrow(data)*no.train)
-min.valid <- round(nrow(data)*no.train) + 1
-max.valid <- round(nrow(data)*(no.train + no.valid))
-min.test <-  round(nrow(data)*(no.train + no.valid)) + 1
-max.test <-  nrow(data)
+min.train <- unique(data$Date)[1]
+max.train <- unique(data$Date)[length(unique(data$Date))*no.train]
+min.valid <- unique(data$Date)[length(unique(data$Date))*no.train + 1]
+max.valid <- unique(data$Date)[length(unique(data$Date))*(no.train + no.valid)]
+min.test <-  unique(data$Date)[length(unique(data$Date))*(no.train + no.valid) + 1]
+max.test <-  unique(data$Date)[length(unique(data$Date))]
 
-train.data <- data[min.train:max.train,]
-valid.data <- data[min.valid:max.valid,]
-test.data <- data[min.test:max.test,]
+train.data <- data %>% 
+  filter(Date >= min.train & Date <= max.train ) %>%
+  na.omit
+
+valid.data <- data %>% 
+  filter(Date >= min.valid & Date <= max.valid ) %>%
+  na.omit
+
+test.data <- data %>% 
+  filter(Date >= min.test & Date <= max.test ) %>%
+  na.omit
 
 # No pre-processing required as all time series are returns on the same scale
 # mean <- apply(train.dataset, 2, mean, na.rm = T)
@@ -3116,10 +3128,14 @@ options(keras.view_metrics = TRUE)
 
 # Linear benchmark model ####
 
-lin.model <- lm(S1.P1 ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
+lin.model <- train.data %>%
+  group_by(X1, port) %>% 
+  do(fit.model = lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = .))
 
-eval_fct <- function(pred, act){
-   # browser()
+eval_fct <- function(model){
+  # browser()
+  pred <- model$.fitted
+  act <- model$ret
   SS.res <- sum((pred - act)^2)
   SS.tot <- sum((act - mean(act, na.rm = TRUE))^2)
   r2 <- 1 - SS.res / SS.tot
@@ -3129,13 +3145,53 @@ eval_fct <- function(pred, act){
   return(c(r2, mse))
 }
 
+lin.model %>% tidy(fit.model)
+lin.model %>% glance(fit.model) %>% ungroup() %>% summarize_at(vars(adj.r.squared), list(~ mean(.,na.rm = T)))
+lin.model %>% augment(fit.model) %>% lapply(eval_fct())
+
+lin.model <- lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
+
 (results <- eval_fct(lin.model$fitted.values, train.data[,ncol(train.data)]))
 
-predictions <- predict(lin.model, as.data.frame(valid.data))
+predictions <- predict(lin.model, valid.data)
 (results <-  eval_fct(predictions, valid.data[,ncol(valid.data)]))
 
 predictions <- predict(lin.model, as.data.frame(test.data))
 (results <-  eval_fct(predictions, test.data[,ncol(test.data)]))
+
+# Simple Feed forward NN using AMORE ####
+
+library(AMORE)
+
+inputs <- sorts %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  as.matrix()
+
+expect_equal(dim(inputs), c(1044, 7))
+
+targets <- list.5x5.pf.d[[1]] %>% 
+  select(S1.P1) %>% 
+  as.matrix()
+
+expect_equal(dim(targets), c(1044, 1))
+
+net <- newff(n.neurons = c(1, 8, 1), 
+             learning.rate.global = 1e-100, 
+             momentum.global = 0.0000000001,
+             error.criterium = "LMS", 
+             hidden.layer = "purelin", 
+             output.layer = "purelin", 
+             method = "ADAPTgdwm") 
+
+ffwd.nn <- train(net, inputs, targets, report = T, show.step = 32, n.shows = 5)
+
+lin.model <- train.data %>%
+  group_by(X1, port) %>% 
+  do(ff = train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5))
+
+
+result <- train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5 )
 
 # Simple Linear model ####
 
