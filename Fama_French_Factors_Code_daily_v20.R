@@ -909,10 +909,8 @@ Compare_Two_Vectors3(select(dt.myFF6.m, Date, MyUMD), select(dt.FF6.m, Date, UMD
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Add Sentiment ####
 # Load matching file - run locally ####
-setwd("F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R")
 ticker.PERMNO.match <- read.csv("ticker.PERMNO.match.csv")
-save(ticker_PERMNO_match, file = "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R/ticker.PERMNO.match.RData")
-
+save(ticker.PERMNO.match, file = "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R/ticker.PERMNO.match.RData")
 
 # Copy ticker.PERMNO.match.RData file to WRDS ####
 
@@ -920,19 +918,13 @@ save(ticker_PERMNO_match, file = "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd
 # Load Sentiment Data - run locally ####
 
 # Define connection string to the SQL Server instance
-sqlConnString <- "Driver = SQL Server;Server = localhost; Database = PhD;trusted_connection = true"
+sqlConnString <- "Driver=SQL Server;Server=localhost; Database=PhD;trusted_connection=true"
 
 # Define number of rows for chunk processing
 sqlRowsPerRead = 10000
 
-# Set path 
-path <- "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R/"
-
-# Create an xdf file name
-localXdfFileName <- file.path(path, "TRMI.xdf")
-
 # Construct query
-TRMI.query = paste("SELECT ticker, windowTimestamp, buzz, sentiment FROM MarketPsych.dbo.CMPNY_UDAI where dataType = 'News_Social'", sep = "")
+TRMI.query = paste("SELECT * FROM MarketPsych.dbo.CMPNY_UDAI where dataType = 'News_Social'", sep = "")
 
 # Construct path
 TRMI.path <- RxSqlServerData(
@@ -948,13 +940,13 @@ TRMI.xdf <-
     #    "TRMI.xdf",
     overwrite = TRUE,
     transforms = list(
-      windowTimestamp = as.POSIXct(windowTimestamp, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "GMT"),
-      buzz = as.numeric(buzz),
-      sentiment = as.numeric(sentiment)
+      windowTimestamp = as.POSIXct(windowTimestamp, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "GMT")
     ),
-    append  = 'none',
     rowsPerRead = sqlRowsPerRead
   )
+
+
+
 save(TRMI.xdf, file = "TRMI.RData")
 
 
