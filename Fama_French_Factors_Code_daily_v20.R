@@ -67,6 +67,7 @@ library(neuralnet) #for neural networks
 library(usethis) #git
 library(testthat) # unit tests
 library(qdapTools) # for list to df transformations
+library(crayon) # change color of tidylog output
 
 
 setwd("/scratch/unisg/ck/new_weekly_lagged/")
@@ -82,6 +83,10 @@ wrds <- dbConnect(Postgres(),
                   password = 'BayInv01!',
                   dbname = 'wrds',
                   sslmode = 'require')
+
+# Change color of tidylog
+crayon <- function(x) cat(white(x), sep = "\n")
+options("tidylog.display" = list(crayon))
 
 # Load file ####
 load(paste(filepath, "FF5_Sentiment_daily.RData", sep = ""))
@@ -2972,70 +2977,69 @@ list.full.snt <- stock.ret %>% run_model_stocks_direct_sentiment(full.snt.factor
 # load(file = paste(filepath, "list.full.snt.stocks.RData", sep = ""))
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
-# Neural Network ####
+# Neural Network using Keras ####
 filepath = getwd()
 
-library(keras) # for deep learning
 library(tidyverse) # general utility functions
 library(caret) # machine learning utility functions
 library(dplyr)
+library(keras)
+library(tensorflow)
+library(reticulate)
+library(sjPlot)
+# use_virtualenv('~/.virtualenvs/R_t_27') on WRDS cloud
 
 # Load data
 load(paste(filepath, "/sorts.RData", sep = ""))
 load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
 
-# load(paste(filepath, "sorts.RData", sep = ""))
-# load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
-
-factor.portfolios <- list.5x5.pf.d %>% 
-  list_df2df() %>% 
-  gather(key = port, value = ret, -c(Date, X1)) %>% 
-  as_tibble()
+target <- list.5x5.pf.d[[1]] %>% 
+  select(Date, S1.P1)
 
 data <- sorts %>% 
-  mutate(Date = yearweek(Date)) %>% 
   select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
-  inner_join(factor.portfolios, by = "Date") %>% 
-  mutate(Date = yearweek(Date)) %>% 
-  group_by(X1, port) 
+  merge(target, by = "Date") %>%
+  na.omit() %>% 
+  select(-Date) %>% 
+  as.matrix() 
 
-# reverse scaling for later 
-# data2 <- t(t(data) * std + mean)
+dataset <- sorts %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  merge(list.5x5.pf.d[[1]][1:2], by = "Date") %>% 
+  select(-Date) %>% 
+  na.omit() %>% 
+  as.matrix() 
+
+data = dataset
 
 # Create datasets for training, validation and test
 no.train <- 0.50
 no.valid <- 0.25 
 no.test <- 0.25
 
-min.train <- unique(data$Date)[1]
-max.train <- unique(data$Date)[length(unique(data$Date))*no.train]
-min.valid <- unique(data$Date)[length(unique(data$Date))*no.train + 1]
-max.valid <- unique(data$Date)[length(unique(data$Date))*(no.train + no.valid)]
-min.test <-  unique(data$Date)[length(unique(data$Date))*(no.train + no.valid) + 1]
-max.test <-  unique(data$Date)[length(unique(data$Date))]
+min.train <- 1
+max.train <- round(nrow(data)*no.train)
+min.valid <- round(nrow(data)*no.train) + 1
+max.valid <- round(nrow(data)*(no.train + no.valid))
+min.test <-  round(nrow(data)*(no.train + no.valid)) + 1
+max.test <-  nrow(data)
 
-train.data <- data %>% 
-  filter(Date >= min.train & Date <= max.train ) %>%
-  na.omit
-
-valid.data <- data %>% 
-  filter(Date >= min.valid & Date <= max.valid ) %>%
-  na.omit
-
-test.data <- data %>% 
-  filter(Date >= min.test & Date <= max.test ) %>%
-  na.omit
+train.data <- data[min.train:max.train,] %>% na.omit
+valid.data <- data[min.valid:max.valid,] %>% na.omit
+test.data <- data[min.test:max.test,] %>% na.omit
 
 # No pre-processing required as all time series are returns on the same scale
 # mean <- apply(train.dataset, 2, mean, na.rm = T)
 # std <- apply(train.dataset, 2, sd, na.rm = T)
 # data <- scale(dataset, center = mean, scale = std)
+# reverse scaling for later 
+# data2 <- t(t(data) * std + mean)
 
-# Generator function
+# Generator functions ####
 
 generator <- function(data, lookback, delay, min_index, max_index,
                       shuffle = FALSE, batch_size = 128, step = 1) {
-   # browser()
+  # browser()
   if (is.null(max_index))
     max_index <- nrow(data) - delay - 1
   i <- min_index + lookback
@@ -3053,13 +3057,15 @@ generator <- function(data, lookback, delay, min_index, max_index,
                                 lookback / step,
                                 dim(data)[[-1]]))
     targets <- array(0, dim = c(length(rows)))
-    print(dim(samples))
     
+    # print(paste("samples = ", dim(samples)))
+    # print(paste("targets = ", dim(targets)))
+
     for (j in 1:length(rows)) {
       indices <- seq(rows[[j]] - lookback, rows[[j]] - 1,
                      length.out = dim(samples)[[2]])
       samples[j,,] <- data[indices,]
-      targets[[j]] <- data[rows[[j]] + delay, ncol(data)]
+      targets[[j]] <- data[rows[[j]] + delay, ncol(data)] #uses last column of data
     }           
     list(samples, targets)
   }
@@ -3104,22 +3110,17 @@ test_gen <- generator(
 val_steps <- (max.valid - min.valid - lookback) #/ batch_size
 
 # How many steps to draw from test_gen in order to see the entire test set
-test_steps <- (nrow(dataset) - min.test - lookback) #/ batch_size
+test_steps <- (nrow(data) - min.test - lookback) #/ batch_size
 
 # set a random seed for reproducability
 set.seed(123)
-library(keras)
-library(tensorflow)
-library(reticulate)
-library(sjPlot)
-# use_virtualenv('~/.virtualenvs/R_t_27') on WRDS cloud
 
 r2_keras <- custom_metric("r2_keras", function(y_true, y_pred){
-  SS_res =  k_sum(k_square(y_true - y_pred)) 
-  SS_tot = k_sum(k_square(y_true - k_mean(y_true))) 
-  return ( 1 - SS_res/(SS_tot))
-  # SS_res =  sum((y_true - y_pred)^2) 
-  # SS_tot = sum((y_true - mean(y_true, na.rm = T))^2) 
+  SS_res =  k_sum(k_square(y_true - y_pred))
+  SS_tot = k_sum(k_square(y_true - k_mean(y_true)))
+  return( 1 - SS_res/(SS_tot))
+  # SS_res =  sum((y_true - y_pred)^2)
+  # SS_tot = sum((y_true - mean(y_true, na.rm = T))^2)
   # return( 1 - SS_res/(SS_tot) )
 })
 
@@ -3128,14 +3129,11 @@ options(keras.view_metrics = TRUE)
 
 # Linear benchmark model ####
 
-lin.model <- train.data %>%
-  group_by(X1, port) %>% 
-  do(fit.model = lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = .))
+lin.model <- lm(train.data[,ncol(train.data)] ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = as.data.frame(train.data))
 
-eval_fct <- function(model){
+# R2 not adjusted yet
+eval_fct <- function(pred, act){
   # browser()
-  pred <- model$.fitted
-  act <- model$ret
   SS.res <- sum((pred - act)^2)
   SS.tot <- sum((act - mean(act, na.rm = TRUE))^2)
   r2 <- 1 - SS.res / SS.tot
@@ -3145,53 +3143,13 @@ eval_fct <- function(model){
   return(c(r2, mse))
 }
 
-lin.model %>% tidy(fit.model)
-lin.model %>% glance(fit.model) %>% ungroup() %>% summarize_at(vars(adj.r.squared), list(~ mean(.,na.rm = T)))
-lin.model %>% augment(fit.model) %>% lapply(eval_fct())
-
-lin.model <- lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
-
 (results <- eval_fct(lin.model$fitted.values, train.data[,ncol(train.data)]))
 
-predictions <- predict(lin.model, valid.data)
+predictions <- predict(lin.model, as.data.frame(valid.data))
 (results <-  eval_fct(predictions, valid.data[,ncol(valid.data)]))
 
 predictions <- predict(lin.model, as.data.frame(test.data))
 (results <-  eval_fct(predictions, test.data[,ncol(test.data)]))
-
-# Simple Feed forward NN using AMORE ####
-
-library(AMORE)
-
-inputs <- sorts %>% 
-  mutate(Date = yearweek(Date)) %>% 
-  select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
-  as.matrix()
-
-expect_equal(dim(inputs), c(1044, 7))
-
-targets <- list.5x5.pf.d[[1]] %>% 
-  select(S1.P1) %>% 
-  as.matrix()
-
-expect_equal(dim(targets), c(1044, 1))
-
-net <- newff(n.neurons = c(1, 8, 1), 
-             learning.rate.global = 1e-100, 
-             momentum.global = 0.0000000001,
-             error.criterium = "LMS", 
-             hidden.layer = "purelin", 
-             output.layer = "purelin", 
-             method = "ADAPTgdwm") 
-
-ffwd.nn <- train(net, inputs, targets, report = T, show.step = 32, n.shows = 5)
-
-lin.model <- train.data %>%
-  group_by(X1, port) %>% 
-  do(ff = train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5))
-
-
-result <- train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5 )
 
 # Simple Linear model ####
 
@@ -3220,7 +3178,7 @@ save(linear.history, file = "linear.history.RData")
 # Basic machine learning approach ####
 model <- keras_model_sequential() %>% 
   layer_flatten(input_shape = c(lookback / step, dim(data)[-1])) %>% 
-  layer_dense(units = 32, activation = "relu") %>% 
+  layer_dense(units = 64, activation = "relu") %>% 
   layer_dense(units = 1)
 
 model %>% compile(
@@ -3234,6 +3192,110 @@ base.history <- model %>% fit_generator(
   epochs = 5,
   validation_data = val_gen,
   validation_steps = val_steps)
+
+base.history %>% plot() + geom_line()
+save(base.history, file = "base.history.RData")
+
+# Simple Linear model with different lags ####
+
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 1, activation = "linear") 
+
+model %>% compile(
+  optimizer = optimizer_rmsprop(),
+  loss = "mse",
+  metrics = r2_keras)
+
+model %>% fit(
+  x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
+  y = subset(train.data, TRUE, c(S1.P1)),
+  batch_size = 8,
+  # steps_per_epoch = 500,
+  epochs = 20,
+  validation_data = list(subset(valid.data, TRUE, c(MktRf:PMN_week52)),
+                         subset(valid.data, TRUE, c(S1.P1)))
+  # callbacks = list(
+  #   callback_early_stopping(patience = 2))
+)
+
+linear.history %>% plot() + geom_line()
+save(linear.history, file = "linear.history.RData")
+
+# plot_model(linear.history)
+# get_weights(linear.history)
+
+
+# Basic machine learning approach with different lags####
+
+#lags
+# 1, 2, 3, 4 weeks
+# 2 , 3, , 6 , 12 months
+
+get.mav <- function(bp,n=2){
+  require(zoo)
+  #if (is.na(bp[1])) bp[1] <- mean(bp,na.rm = TRUE)
+  #bp <- na.locf(bp,na.rm = FALSE)
+  if (length(bp) < n) return(bp)
+  c(bp[1:(n - 1)],rollapply(1 + bp,width = n,prod,align = "right", na.rm = TRUE) - 1)
+}
+
+load(paste(filepath, "/sorts_new.RData", sep = ""))
+load(paste(filepath, "/list.5x5.pf.d_new.RData", sep = ""))
+
+target <- list.5x5.pf.d[[1]] %>% 
+  select(Date, S1.P1)
+
+data <- sorts %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  mutate_at(vars(MktRf:PMN), list(~ lag(.,1))) %>% 
+  mutate_at(vars(MktRf:PMN), list(week2 = ~get.mav(., 2),
+                                  week3 = ~get.mav(., 3),
+                                  week4 = ~get.mav(., 4),
+                                  week8 = ~get.mav(., 8),
+                                  week12 = ~get.mav(., 12),
+                                  week26 = ~get.mav(., 26),
+                                  week52 = ~get.mav(., 52))) %>% 
+  merge(target, by = "Date") %>%
+  na.omit() %>% 
+  select(-Date) %>% 
+  as.matrix() 
+
+# Create datasets for training, validation and test
+no.train <- 0.50
+no.valid <- 0.25 
+no.test <- 0.25
+
+min.train <- 1
+max.train <- round(nrow(data)*no.train)
+min.valid <- round(nrow(data)*no.train) + 1
+max.valid <- round(nrow(data)*(no.train + no.valid))
+min.test <-  round(nrow(data)*(no.train + no.valid)) + 1
+max.test <-  nrow(data)
+
+train.data <- data[min.train:max.train,] %>% na.omit
+valid.data <- data[min.valid:max.valid,] %>% na.omit
+test.data <- data[min.test:max.test,] %>% na.omit
+
+model <- keras_model_sequential() %>% 
+  layer_flatten(input_shape =  c(dim(data)[2] - 1)) %>% 
+  layer_dense(units = 56, activation = "relu") %>% 
+  layer_dense(units = 8, activation = "relu") %>% 
+  layer_dense(units = 1)
+
+model %>% compile(
+  optimizer = optimizer_rmsprop(),
+  loss = "mse",
+  metrics = r2_keras)
+
+base.history.lags <- model %>% fit(
+  x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
+  y = subset(train.data, TRUE, c(S1.P1)),
+  batch_size = 64,
+  epochs = 20,
+  validation_split = .2
+  # callbacks = list(
+  #   callback_early_stopping(patience = 2))
+)
 
 base.history %>% plot() + geom_line()
 save(base.history, file = "base.history.RData")
@@ -3336,6 +3398,117 @@ save(lstm.r2.history, file = "lstm.r2.history.RData")
 (results <- model %>% evaluate_generator(test_gen, steps = test_steps))
 predictions <- model %>% predict_generator(test_gen, steps = test_steps)
 plot(predictions)
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
+# Neural Network using AMORE ####
+filepath = getwd()
+
+# Load data
+load(paste(filepath, "/sorts.RData", sep = ""))
+load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
+
+factor.portfolios <- list.5x5.pf.d %>% 
+  list_df2df() %>% 
+  gather(key = port, value = ret, -c(Date, X1)) %>% 
+  as_tibble()
+
+data <- sorts %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  inner_join(factor.portfolios, by = "Date") %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  group_by(X1, port) 
+
+# Create datasets for training, validation and test
+no.train <- 0.50
+no.valid <- 0.25 
+no.test <- 0.25
+
+min.train <- unique(data$Date)[1]
+max.train <- unique(data$Date)[length(unique(data$Date))*no.train]
+min.valid <- unique(data$Date)[length(unique(data$Date))*no.train + 1]
+max.valid <- unique(data$Date)[length(unique(data$Date))*(no.train + no.valid)]
+min.test <-  unique(data$Date)[length(unique(data$Date))*(no.train + no.valid) + 1]
+max.test <-  unique(data$Date)[length(unique(data$Date))]
+
+train.data <- data %>% 
+  filter(Date >= min.train & Date <= max.train ) %>%
+  na.omit
+
+valid.data <- data %>% 
+  filter(Date >= min.valid & Date <= max.valid ) %>%
+  na.omit
+
+test.data <- data %>% 
+  filter(Date >= min.test & Date <= max.test ) %>%
+  na.omit
+
+# Linear benchmark model ####
+
+lin.model <- train.data %>%
+  group_by(X1, port) %>% 
+  do(fit.model = lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = .))
+
+eval_fct <- function(model){
+  # browser()
+  pred <- model$.fitted
+  act <- model$ret
+  SS.res <- sum((pred - act)^2)
+  SS.tot <- sum((act - mean(act, na.rm = TRUE))^2)
+  r2 <- 1 - SS.res / SS.tot
+  
+  mse = mean((pred - act)^2, na.rm = TRUE)
+  
+  return(c(r2, mse))
+}
+
+lin.model %>% tidy(fit.model)
+lin.model %>% glance(fit.model) %>% ungroup() %>% summarize_at(vars(adj.r.squared), list(~ mean(.,na.rm = T)))
+lin.model %>% augment(fit.model) %>% lapply(eval_fct())
+
+lin.model <- lm(ret ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
+
+(results <- eval_fct(lin.model$fitted.values, train.data[,ncol(train.data)]))
+
+predictions <- predict(lin.model, valid.data)
+(results <-  eval_fct(predictions, valid.data[,ncol(valid.data)]))
+
+predictions <- predict(lin.model, as.data.frame(test.data))
+(results <-  eval_fct(predictions, test.data[,ncol(test.data)]))
+
+# Simple Feed forward NN using AMORE ####
+
+library(AMORE)
+
+inputs <- sorts %>% 
+  mutate(Date = yearweek(Date)) %>% 
+  select(MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  as.matrix()
+
+expect_equal(dim(inputs), c(1044, 7))
+
+targets <- list.5x5.pf.d[[1]] %>% 
+  select(S1.P1) %>% 
+  as.matrix()
+
+expect_equal(dim(targets), c(1044, 1))
+
+net <- newff(n.neurons = c(1, 8, 1), 
+             learning.rate.global = 1e-100, 
+             momentum.global = 0.0000000001,
+             error.criterium = "LMS", 
+             hidden.layer = "purelin", 
+             output.layer = "purelin", 
+             method = "ADAPTgdwm") 
+
+ffwd.nn <- train(net, inputs, targets, report = T, show.step = 32, n.shows = 5)
+
+lin.model <- train.data %>%
+  group_by(X1, port) %>% 
+  do(ff = train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5))
+
+result <- train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=100, n.shows=5 )
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Descriptive statistics on sentiment - Daily #####
