@@ -69,12 +69,13 @@ library(testthat) # unit tests
 library(qdapTools) # for list to df transformations
 library(crayon) # change color of tidylog output
 
-
+setwd("C:/Users/CKOEPPEL/Dropbox/Studium/PhD/HSG/Research/3rd_Paper_Sentiment/")
 setwd("/scratch/unisg/ck/new_weekly_lagged/")
 
 # Alternative filepath
-filepath <- "/scratch/unisg/ck/new_weekly_lagged/"
-
+filepath <- getwd()
+remote.path = "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R/"
+  
 ### WRDS CONNECTION ###
 wrds <- dbConnect(Postgres(),
                   host = 'wrds-pgdata.wharton.upenn.edu',
@@ -89,10 +90,10 @@ crayon <- function(x) cat(white(x), sep = "\n")
 options("tidylog.display" = list(crayon))
 
 # Load file ####
-load(paste(filepath, "FF5_Sentiment_daily.RData", sep = ""))
+load(paste(filepath, "FF5_Sentiment_daily.RData", sep = "/"))
 
 # Save File ####
-save.image(paste(filepath, "FF5_Sentiment_daily.RData", sep = ""))
+save.image(paste(filepath, "FF5_Sentiment_daily.RData", sep = "/"))
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # LOAD COMPUSTAT FROM WRDS ####
@@ -104,14 +105,14 @@ res <- dbSendQuery(wrds,"select GVKEY, CUSIP, DATADATE, FYR, FYEAR, SICH, NAICSH
                    where INDFMT = 'INDL' and DATAFMT = 'STD' and CONSOL = 'C' and POPSRC = 'D'") # STD is unrestatd data
 
 data.comp.funda <- dbFetch(res, n = -1) # n = -1 denotes no max but retrieve all record
-save(data.comp.funda, file = paste(filepath, "data.comp.funda.RData", sep = ""))
+save(data.comp.funda, file = paste(filepath, "data.comp.funda.RData", sep = "/"))
 
 # Retrieve Merged Compustat/CRSP link table ####
 res <- dbSendQuery(wrds,"select GVKEY, LPERMNO, LINKDT, LINKENDDT, LINKTYPE, LINKPRIM
                    from crsp.ccmxpf_lnkhist")
 
 data.ccmlink <- dbFetch(res, n = -1) 
-save(data.ccmlink, file = paste(filepath, "data.ccmlink.RData", sep = ""))
+save(data.ccmlink, file = paste(filepath, "data.ccmlink.RData", sep = "/"))
 
 # Merge the linked Permno onto Compustat dataset ####
 # compared to SAS code based on WRDS FF Research macro, I don't include all Linktypes but add J Linkprim
@@ -134,7 +135,7 @@ data.ccm <-  data.ccmlink %>%
   arrange(datadate, permno, linktype, linkprim) %>%
   dplyr::distinct(datadate, permno, .keep_all = TRUE)
 
-save(data.ccm, file = paste(filepath, "data.ccm.RData", sep = ""))
+save(data.ccm, file = paste(filepath, "data.ccm.RData", sep = "/"))
 rm(data.comp.funda, data.ccmlink)
 
 # # testing
@@ -145,16 +146,16 @@ rm(data.comp.funda, data.ccmlink)
 
 # COMPUSTAT CLEANING AND VAR CALC ####
 
-# load(paste(filepath, "data.ccm.RData", sep = ""))
+# load(paste(filepath, "data.ccm.RData", sep = "/"))
 data.comp <- data.ccm %>%
   rename(PERMNO = permno) %>% 
   data.table %>% # ensure col names match crsp's
   arrange(datadate, PERMNO) %>%
   dplyr::distinct(datadate, PERMNO, .keep_all = TRUE) # hasn't been issue but just in case
 
-save(data.comp, file = paste(filepath, "data.comp.RData", sep = ""))
+save(data.comp, file = paste(filepath, "data.comp.RData", sep = "/"))
 
-# load(paste(filepath, "data.comp.RData", sep = ""))
+# load(paste(filepath, "data.comp.RData", sep = "/"))
 data.comp.a <- data.comp %>%
   group_by(PERMNO) %>%
   mutate(BE = coalesce(seq, ceq + pstk, at - lt) + coalesce(txditc, txdb + itcb, 0) - 
@@ -172,7 +173,7 @@ data.comp.a <- data.comp %>%
   mutate_if(is.numeric, list(~ ifelse(is.infinite(.), NA, .))) %>% # replace Inf w/ NA's
   mutate_if(is.numeric, list(~ round(., 5))) # round to 5 decimal places (for some reason, 0's not properly coded in some instances)
 
-save(data.comp.a, file = paste(filepath, "data.comp.a.RData", sep = ""))
+save(data.comp.a, file = paste(filepath, "data.comp.a.RData", sep = "/"))
 rm(data.ccm, data.comp)
 
 # testing
@@ -214,7 +215,7 @@ crsp.dsf <- crsp.dsf %>%
   mutate(Day = as.Date(date)) %>%
   select(-date)
 
-save(crsp.dsf, file = paste(filepath, "crsp.dsf.RData", sep = ""))
+save(crsp.dsf, file = paste(filepath, "crsp.dsf.RData", sep = "/"))
 
 res <- dbSendQuery(wrds, "select DATE, PERMNO, SHRCD, EXCHCD, NAICS
                    from CRSP.DSE")
@@ -226,7 +227,7 @@ crsp.dse <- crsp.dse %>%
   mutate(Day = as.Date(date)) %>%
   select(-date)
 
-save(crsp.dse, file = paste(filepath, "crsp.dse.RData", sep = ""))
+save(crsp.dse, file = paste(filepath, "crsp.dse.RData", sep = "/"))
 
 res <- dbSendQuery(wrds, "select DLSTDT, PERMNO, dlret
                    from crsp.dsedelist") 
@@ -238,12 +239,12 @@ crsp.dsedelist <- crsp.dsedelist %>%
   mutate(Day = as.Date(dlstdt)) %>%
   select(-dlstdt)
 
-save(crsp.dsedelist, file = paste(filepath, "crsp.dsedelist.RData", sep = ""))
+save(crsp.dsedelist, file = paste(filepath, "crsp.dsedelist.RData", sep = "/"))
 
 # Merge daily CRSP data ####
-load(paste(filepath, "crsp.dsf.RData", sep = ""))
-load(paste(filepath, "crsp.dse.RData", sep = ""))
-load(paste(filepath, "crsp.dsedelist.RData", sep = ""))
+load(paste(filepath, "crsp.dsf.RData", sep = "/"))
+load(paste(filepath, "crsp.dse.RData", sep = "/"))
+load(paste(filepath, "crsp.dsedelist.RData", sep = "/"))
 
 data.crsp.d2 <- crsp.dsf %>%
   join(crsp.dse, by = c("Day", "permno"), type = "full", match = "all") %>%
@@ -252,7 +253,7 @@ data.crsp.d2 <- crsp.dsf %>%
   mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
   mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) 
 
-save(data.crsp.d2, file = paste(filepath, "data.crsp.d2.RData", sep = ""))
+save(data.crsp.d2, file = paste(filepath, "data.crsp.d2.RData", sep = "/"))
 
 data.crsp.d3 <- data.crsp.d2 %>% # create retadj by merging ret and dlret
   arrange(Day, PERMNO) %>%
@@ -264,12 +265,12 @@ data.crsp.d3 <- data.crsp.d2 %>% # create retadj by merging ret and dlret
   arrange(Day, permco, desc(meq)) %>%
   group_by(Day, permco)  
 
-save(data.crsp.d3, file = paste(filepath, "data.crsp.d3.RData", sep = ""))
+save(data.crsp.d3, file = paste(filepath, "data.crsp.d3.RData", sep = "/"))
 
 data.crsp.d4 <- data.crsp.d3 %>% 
   dplyr::slice(1) 
 
-save(data.crsp.d4, file = paste(filepath, "data.crsp.d4.RData", sep = ""))
+save(data.crsp.d4, file = paste(filepath, "data.crsp.d4.RData", sep = "/"))
 
 data.crsp.d <- data.crsp.d4 %>% # keep only permno with largest meq
   ungroup %>%
@@ -282,12 +283,12 @@ load("data.crsp.d.validation.RData")
 expect_equal(summary(data.crsp.d), data.crsp.d.validation)
 rm(data.crsp.d.validation)
 
-save(data.crsp.d, file = paste(filepath, "data.crsp.d.RData", sep = ""))
+save(data.crsp.d, file = paste(filepath, "data.crsp.d.RData", sep = "/"))
 rm(crsp.dse, crsp.dsf, crsp.dsedelist, data.crsp.d2, data.crsp.d3, data.crsp.d4)
 
 # Daily CRSP CLEANING ####
 # filters EXCHCD (NYSE, NASDAQ, AMEX) and SHRCD (10,11)
-load(paste(filepath, "data.crsp.d.RData", sep = ""))
+load(paste(filepath, "data.crsp.d.RData", sep = "/"))
 
 Fill_TS_NAs_Day <- function(main) {
   # takes datat frame with Date and PERMNO as columns and fills in NAs where there are gaps
@@ -318,9 +319,9 @@ data.crsp.cln.d1 <- data.crsp.d %>%
   mutate(ME = ME/1000) %>%  # convert from thousands to millions (consistent with compustat values)
   filter((shrcd  ==  10 | shrcd  ==  11) & (exchcd  ==  1 | exchcd  ==  2 | exchcd  ==  3))
 
-save(data.crsp.cln.d1, file = paste(filepath, "data.crsp.cln.d1.RData", sep = ""))
+save(data.crsp.cln.d1, file = paste(filepath, "data.crsp.cln.d1.RData", sep = "/"))
 
-load(paste(filepath, "data.crsp.cln.d1.RData", sep = ""))
+load(paste(filepath, "data.crsp.cln.d1.RData", sep = "/"))
 
 data.crsp.cln.d2 <- data.crsp.cln.d1 %>%
   filter(Day <= "1990-01-01")
@@ -348,7 +349,7 @@ load("data.crsp.cln.d.validation.RData")
 expect_equal(summary(data.crsp.cln.d), data.crsp.cln.d.validation)
 rm(data.crsp.cln.d.validation)
 
-save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = ""))
+save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
 rm(data.crsp.d, data.crsp.cln.d1, data.crsp.cln.d2, data.crsp.cln.d3)
 
 # testing
@@ -373,7 +374,7 @@ crsp.msf <- crsp.msf %>%
   mutate(Yearmon = as.yearmon(as.Date(date))) %>%
   select(-date)
 
-save(crsp.msf, file = paste(filepath, "crsp.msf.RData", sep = ""))
+save(crsp.msf, file = paste(filepath, "crsp.msf.RData", sep = "/"))
 
 res <- dbSendQuery(wrds, "select DATE, PERMNO, SHRCD, EXCHCD, NAICS
                    from CRSP.MSE")
@@ -385,7 +386,7 @@ crsp.mse <- crsp.mse %>%
   mutate(Yearmon = as.yearmon(as.Date(date))) %>%
   select(-date)
 
-save(crsp.mse, file = paste(filepath, "crsp.mse.RData", sep = ""))
+save(crsp.mse, file = paste(filepath, "crsp.mse.RData", sep = "/"))
 
 res <- dbSendQuery(wrds, "select DLSTDT, PERMNO, dlret
                    from crsp.msedelist") 
@@ -398,13 +399,13 @@ crsp.msedelist <- crsp.msedelist %>%
   mutate(Yearmon = as.yearmon(as.Date(dlstdt))) %>%
   select(-dlstdt)
 
-save(crsp.msedelist, file = paste(filepath, "crsp.msedelist.RData", sep = ""))
+save(crsp.msedelist, file = paste(filepath, "crsp.msedelist.RData", sep = "/"))
 rm(wrds, res)
 
 # Merge Monthly CRSP  data ####
-# load(paste(filepath, "crsp.msf.RData", sep = ""))
-# load(paste(filepath, "crsp.mse.RData", sep = ""))
-# load(paste(filepath, "crsp.msedelist.RData", sep = ""))
+# load(paste(filepath, "crsp.msf.RData", sep = "/"))
+# load(paste(filepath, "crsp.mse.RData", sep = "/"))
+# load(paste(filepath, "crsp.msedelist.RData", sep = "/"))
 
 data.crsp.m <- crsp.msf %>%
   merge(crsp.mse, by = c("Yearmon", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
@@ -432,7 +433,7 @@ load("data.crsp.m.validation.RData")
 expect_equal(summary(data.crsp.m), data.crsp.m.validation)
 rm(data.crsp.m.validation)
 
-save(data.crsp.m, file = paste(filepath, "data.crsp.m.RData", sep = ""))
+save(data.crsp.m, file = paste(filepath, "data.crsp.m.RData", sep = "/"))
 rm(crsp.mse, crsp.msf, crsp.msedelist)
 
 # Get Davis book equity data ####
@@ -441,7 +442,7 @@ rm(crsp.mse, crsp.msf, crsp.msedelist)
 # Keep all CRSP info (drop Compustat if can't find CRSP)
 # Match Compustat and Davis data based on FF methodology (to following year June when data is first known at month end)
 
-data.Davis.bkeq <- read.csv(paste(filepath, "Davis Book Equity.csv", sep = ""))
+data.Davis.bkeq <- read.csv(paste(filepath, "Davis Book Equity.csv", sep = "/"))
 data.Davis.bkeq[data.Davis.bkeq  ==  -999 | data.Davis.bkeq  ==  -99.99] <- NA
 data.Davis.bkeq <- data.Davis.bkeq %>%
   mutate(PERMNO = factor(PERMNO)) %>%
@@ -450,7 +451,7 @@ data.Davis.bkeq <- data.Davis.bkeq %>%
   gather(Date, Davis.bkeq, -PERMNO, na.rm = TRUE) %>%
   mutate(Day = ymd(paste0(substr(Date, 2, 5),"-6-01")), Yearmon = as.yearmon(ymd(paste0(substr(Date, 2, 5),"-6-01")))) 
 
-save(data.Davis.bkeq, file = paste(filepath, "data.Davis.bkeq.RData", sep = ""))
+save(data.Davis.bkeq, file = paste(filepath, "data.Davis.bkeq.RData", sep = "/"))
 
 # set date June of SAME year when data would have been known (based on French website notes)
 
@@ -481,7 +482,7 @@ Fill_TS_NAs <- function(main) {
 }
 
 # SLOW CODE (25 mins)
-# load(paste(filepath, "data.crsp.m.RData", sep = ""))
+# load(paste(filepath, "data.crsp.m.RData", sep = "/"))
 data.crsp.cln.m <- data.crsp.m %>%
   select(Yearmon, PERMNO, shrcd, exchcd, naics, cfacpr, cfacshr, shrout, prc, vol, retx, retadj, ME) %>%
   mutate(ME = ME/1000) %>%  # convert from thousands to millions (consistent with compustat values)
@@ -496,13 +497,13 @@ data.crsp.cln.m <- data.crsp.m %>%
   arrange(Yearmon, PERMNO) %>%
   dplyr::distinct(Yearmon, PERMNO, .keep_all = TRUE) # hasn't been issue but just in case
 
-save(data.crsp.cln.m, file = paste(filepath, "data.crsp.cln.m.RData", sep = ""))
+save(data.crsp.cln.m, file = paste(filepath, "data.crsp.cln.m.RData", sep = "/"))
 rm(data.crsp.m)
 
 # Merge Compustat and Monthly CRSP ####
-load(paste(filepath, "data.crsp.cln.m.RData", sep = ""))
-load(paste(filepath, "data.comp.a.RData", sep = ""))
-load(paste(filepath, "data.Davis.bkeq.RData", sep = ""))
+load(paste(filepath, "data.crsp.cln.m.RData", sep = "/"))
+load(paste(filepath, "data.comp.a.RData", sep = "/"))
+load(paste(filepath, "data.Davis.bkeq.RData", sep = "/"))
 
 na_locf_until = function(x, n) {
   # in time series data, fill in na's untill indicated n
@@ -521,7 +522,7 @@ data.both.m <- data.comp.a %>%
   # filling max of 11 previous months means gaps may appear when fiscal year end changes (very strict)
   mutate_at(vars(datadate:Davis.bkeq), list(~ na_locf_until(., 11)))
   
-save(data.both.m, file = paste(filepath, "data.both.m.RData", sep = "")) 
+save(data.both.m, file = paste(filepath, "data.both.m.RData", sep = "/")) 
 # company info has no Date gaps (filled with NA's)
 # all data publicly available by end of Date period (Compustat first data is June-1950 matched to CRSP Jun-51))
 # includes all CRSP (but only Compustat/Davis data that matches CRSP)
@@ -541,7 +542,7 @@ get.mav <- function(bp,n=2){
   c(bp[1:(n - 1)],rollapply(bp,width = n,prod,align = "right", na.rm = TRUE))  
 }
 
-load(paste(filepath, "data.both.m.RData", sep = "")) 
+load(paste(filepath, "data.both.m.RData", sep = "/")) 
 data.both.FF.m.full <- data.both.m %>%
   group_by(PERMNO) %>%
   mutate(d.shares = (shrout*cfacshr)/(lag(shrout)*lag(cfacshr)) - 1, # change in monthly share count (adjusted for splits)
@@ -568,7 +569,7 @@ load("data.both.FF.m.full.validation.RData")
 expect_equal(summary(data.both.FF.m.full), data.both.FF.m.full.validation)
 rm(data.both.FF.m.full.validation)
 
-save(data.both.FF.m.full, file = paste(filepath, "data.both.FF.m.full.RData", sep = ""))
+save(data.both.FF.m.full, file = paste(filepath, "data.both.FF.m.full.RData", sep = "/"))
 
 data.both.FF.m <- data.both.FF.m.full %>%
   mutate_at(vars(d.shares:lag.AstChg), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
@@ -587,7 +588,7 @@ load("data.both.FF.m.validation.RData")
 expect_equal(summary(data.both.FF.m), data.both.FF.m.validation)
 rm(data.both.FF.m.validation)
 
-save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = ""))
+save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = "/"))
 rm(data.both.m, data.both.FF.m.full)
 
 # FF Recon ####
@@ -659,8 +660,8 @@ Form_FF6Ports <- function(monthly, daily) {
   return(output)
 }
 
-load(paste(filepath, "data.both.FF.m.RData", sep = ""))
-load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
+load(paste(filepath, "data.both.FF.m.RData", sep = "/"))
+load(paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
 
 start <- 1997
 end <- 2018
@@ -669,19 +670,19 @@ data.both.FF.m.unlim <- data.both.FF.m
 data.both.FF.m <- data.both.FF.m %>% 
   filter(year(Yearmon) > start & year(Yearmon) < end) %>% 
   mutate(Date = Yearmon)
-save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = ""))
-save(data.both.FF.m.unlim, file = paste(filepath, "data.both.FF.m.unlim.RData", sep = ""))
+save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = "/"))
+save(data.both.FF.m.unlim, file = paste(filepath, "data.both.FF.m.unlim.RData", sep = "/"))
 
 data.crsp.cln.d.unlim <- data.crsp.cln.d
 data.crsp.cln.d <- data.crsp.cln.d %>% 
   filter(year(Day) > start & year(Day) < end) %>% 
   mutate(Date = Day)
-save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = ""))
-save(data.crsp.cln.d.unlim, file = paste(filepath, "data.crsp.cln.d.unlim.RData", sep = ""))
+save(data.crsp.cln.d, file = paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
+save(data.crsp.cln.d.unlim, file = paste(filepath, "data.crsp.cln.d.unlim.RData", sep = "/"))
 
 dt.myFF6.d <- Form_FF6Ports(data.both.FF.m, data.crsp.cln.d) 
 
-save(dt.myFF6.d, file = paste(filepath, "dt.myFF6.d.RData", sep = ""))
+save(dt.myFF6.d, file = paste(filepath, "dt.myFF6.d.RData", sep = "/"))
 rm(data.both.FF.m, data.crsp.cln.d, data.both.FF.m.unlim, data.crsp.cln.d.unlim)
 
 # Load FF data - Run on local machine ####
@@ -694,7 +695,7 @@ save("wb.daily", file = "wb.daily.RDATA")
 # Copy wb file into wrds directory, rename "RDATA" to "RData" ####
 
 # Import FF6 and Mkt to check data - Run on WRDS Cloud ####
-load(paste(filepath, "wb.daily.RData", sep = ""))
+load(paste(filepath, "wb.daily.RData", sep = "/"))
 
 dt.FF6.d <- wb.daily %>%
   mutate(Day = ymd(Date),
@@ -705,7 +706,7 @@ dt.FF6.d <- wb.daily %>%
 
 dt.FF6.d <- dt.FF6.d %>% filter(year(Day) >=  start & year(Day) <=  end)
 
-save(dt.FF6.d, file = paste(filepath, "dt.FF6.d.RData", sep = ""))
+save(dt.FF6.d, file = paste(filepath, "dt.FF6.d.RData", sep = "/"))
 rm(wb.daily)
 
 # Check FF6 factor returns (Jul '26 through Dec '17) ####
@@ -743,8 +744,8 @@ Compare_Two_Vectors <- function(v1, v2, sqnc = 1) { # omits DATE option
   # legend("topright", c("1", "2"), lty = 1, col = c("black","blue"))
 }
 
-load(paste(filepath, "dt.myFF6.d.RData", sep = ""))
-load(paste(filepath, "dt.FF6.d.RData", sep = ""))
+load(paste(filepath, "dt.myFF6.d.RData", sep = "/"))
+load(paste(filepath, "dt.FF6.d.RData", sep = "/"))
 
 Compare_Two_Vectors(select(dt.myFF6.d, Day, MyMkt), select(dt.FF6.d, Day, Mkt), sqnc = 12)
 Compare_Two_Vectors(select(dt.myFF6.d, Day, MySMB), select(dt.FF6.d, Day, SMB), sqnc = 12)
@@ -822,7 +823,7 @@ Form_FF6Ports <- function(df) {
   return(output)
 }
 
-load(paste(filepath, "data.both.FF.m.RData", sep = ""))
+load(paste(filepath, "data.both.FF.m.RData", sep = "/"))
 
 start <- 1998
 end <- 2018
@@ -832,7 +833,7 @@ dt.myFF6.m <- data.both.FF.m %>%
   Form_FF6Ports %>%
   filter(year(Date) > start & year(Date) < end)
 
-save(dt.myFF6.m, file = paste(filepath, "dt.myFF6.m.RData", sep = ""))
+save(dt.myFF6.m, file = paste(filepath, "dt.myFF6.m.RData", sep = "/"))
 
 # Load FF data - Run on local machine ####
 library(xlsx)
@@ -844,7 +845,7 @@ save("wb", file = "wb.RDATA", ascii = TRUE, compress = FALSE)
 
 # Copy wb file into wrds directory, rename "RDATA" to "RData" ####
 # Import FF6 and Mkt to check data - Run on WRDS Cloud ####
-load(paste(filepath, "wb.RData", sep = ""))
+load(paste(filepath, "wb.RData", sep = "/"))
 
 dt.FF6.m <- wb %>%
   mutate(Date = as.yearmon(ymd(paste0(Date,28))),
@@ -858,7 +859,7 @@ end <- 2018
 dt.FF6.m <- dt.FF6.m %>% 
   filter(year(Date) >=  start & year(Date) <=  end)
 
-save(dt.FF6.m, file = paste(filepath, "dt.FF6.m.RData", sep = ""))
+save(dt.FF6.m, file = paste(filepath, "dt.FF6.m.RData", sep = "/"))
 
 # Check FF6 factor returns (Jul '26 through Dec '17) ####
 
@@ -895,8 +896,8 @@ Compare_Two_Vectors3 <- function(v1, v2, sqnc = 1) { # omits DATE option
   legend("topright", c("1", "2"), lty = 1, col = c("black","blue"))
 }
 
-load(paste(filepath, "dt.myFF6.m.RData", sep = ""))
-load(paste(filepath, "dt.FF6.m.RData", sep = ""))
+load(paste(filepath, "dt.myFF6.m.RData", sep = "/"))
+load(paste(filepath, "dt.FF6.m.RData", sep = "/"))
 
 Compare_Two_Vectors3(select(dt.myFF6.m, Date, MyMkt), select(dt.FF6.m, Date, Mkt), sqnc = 12)
 Compare_Two_Vectors3(select(dt.myFF6.m, Date, MySMB), select(dt.FF6.m, Date, SMB), sqnc = 12)
@@ -1036,7 +1037,7 @@ if (snt.selector  ==  1) {
   load("TRMI_Newssocial.RData")
 }
 
-load(paste(filepath, "ticker.PERMNO.match.RData", sep = ""))
+load(paste(filepath, "ticker.PERMNO.match.RData", sep = "/"))
 ticker.PERMNO.match <- ticker_PERMNO_match %>%
   mutate(PERMNO = as.factor(LPERMNO),
          LINKDT = as.Date(as.numeric(LINKDT)),
@@ -1054,8 +1055,8 @@ TRMI <- TRMI.xdf %>%
   arrange(Day, PERMNO, LINKTYPE, LINKPRIM) %>%
   dplyr::distinct(Day, PERMNO, .keep_all = TRUE)
 
-save(TRMI, file = paste(filepath, "TRMI.RData", sep = ""))
-load(paste(filepath, "TRMI.RData", sep = ""))
+save(TRMI, file = paste(filepath, "TRMI.RData", sep = "/"))
+load(paste(filepath, "TRMI.RData", sep = "/"))
 
 Fill_TS_NAs_TRMI <- function(main, window) {
   # takes datat frame with Date and PERMNO as columns and fills in NAs where there are gaps
@@ -1224,7 +1225,7 @@ TRMI.aggr.d <- TRMI %>%
   join(TRMI_aggr_glo_diff_d(TRMI), by = c("PERMNO", "Day")) %>%
   arrange(PERMNO, Day) 
 
-save(TRMI.aggr.d, file = paste(filepath, "TRMI.aggr.d.RData", sep = ""))
+save(TRMI.aggr.d, file = paste(filepath, "TRMI.aggr.d.RData", sep = "/"))
 
 TRMI.aggr.m <- TRMI %>%
   TRMI_aggr_level %>%
@@ -1232,7 +1233,7 @@ TRMI.aggr.m <- TRMI %>%
   join(TRMI_aggr_glo_diff_m(TRMI), by = c("PERMNO", "Yearmon")) %>%
   arrange(PERMNO, Yearmon) 
 
-save(TRMI.aggr.m, file = paste(filepath, "TRMI.aggr.m.RData", sep = ""))
+save(TRMI.aggr.m, file = paste(filepath, "TRMI.aggr.m.RData", sep = "/"))
 
 TRMI.aggr.w <- TRMI %>%
   TRMI_aggr_level_w %>%
@@ -1240,7 +1241,7 @@ TRMI.aggr.w <- TRMI %>%
   join(TRMI_aggr_glo_diff_w(TRMI), by = c("PERMNO", "Yearweek")) %>%
   arrange(PERMNO, Yearweek) 
 
-save(TRMI.aggr.w, file = paste(filepath, "TRMI.aggr.w.RData", sep = ""))
+save(TRMI.aggr.w, file = paste(filepath, "TRMI.aggr.w.RData", sep = "/"))
 rm(snt.selector, TRMI, TRMI.xdf, ticker.PERMNO.match)
 
 ana <- function(df){
@@ -1250,7 +1251,7 @@ ana <- function(df){
   print(head(as.data.frame(filter(df, PERMNO == 17144))))
   print(summary(df))
 }
-save(ana, file = paste(filepath, "analyze_objects.RData", sep = ""))
+save(ana, file = paste(filepath, "analyze_objects.RData", sep = "/"))
 
 # Merge FF5 and Sentiment data ####
 
@@ -1258,8 +1259,8 @@ start <- 1997 # greater than 1925 or 1997 or 1962
 end <- 2018 # smaller than 2018 or 2014
 
 # daily
-load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
-load(paste(filepath, "TRMI.aggr.d.RData", sep = ""))
+load(paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
+load(paste(filepath, "TRMI.aggr.d.RData", sep = "/"))
 data.snt.d <- data.crsp.cln.d %>%
   filter(year(Day) > start & year(Day) < end) %>%
   left_join(TRMI.aggr.d, by = c("PERMNO", "Day")) %>%
@@ -1272,12 +1273,12 @@ load("data.snt.d.validation.RData")
 expect_equal(summary(data.snt.d), data.snt.d.validation)
 rm(data.snt.d.validation)
 
-save(data.snt.d, file = paste(filepath, "data.snt.d.RData", sep = ""))
+save(data.snt.d, file = paste(filepath, "data.snt.d.RData", sep = "/"))
 rm(TRMI.aggr.d, data.crsp.cln.d)
 
 # monthly
-load(paste(filepath, "data.both.FF.m.RData", sep = ""))
-load(paste(filepath, "TRMI.aggr.m.RData", sep = ""))
+load(paste(filepath, "data.both.FF.m.RData", sep = "/"))
+load(paste(filepath, "TRMI.aggr.m.RData", sep = "/"))
 data.snt.m <- data.both.FF.m %>%
   filter(year(Yearmon) > start & year(Yearmon) < end) %>%
   left_join(TRMI.aggr.m, by = c("PERMNO", "Yearmon")) %>% 
@@ -1290,13 +1291,13 @@ load("data.snt.m.validation.RData")
 expect_equal(summary(data.snt.m), data.snt.m.validation)
 rm(data.snt.m.validation)
 
-save(data.snt.m, file = paste(filepath, "data.snt.m.RData", sep = ""))
+save(data.snt.m, file = paste(filepath, "data.snt.m.RData", sep = "/"))
 rm(TRMI.aggr.m, data.both.FF.m)
 
 # weekly
-load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
-load(paste(filepath, "TRMI.aggr.w.RData", sep = ""))
-load(paste(filepath, "data.snt.m.RData", sep = ""))
+load(paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
+load(paste(filepath, "TRMI.aggr.w.RData", sep = "/"))
+load(paste(filepath, "data.snt.m.RData", sep = "/"))
 
 data.crsp.cln.w <- data.crsp.cln.d %>%
   filter(year(Day) > start & year(Day) < end) %>%
@@ -1310,7 +1311,7 @@ data.crsp.cln.w <- data.crsp.cln.d %>%
 # data.snt.w %>% filter(PERMNO == 17144) %>% as.data.frame() %>% head(20)
 # TRMI.aggr.d %>% filter(PERMNO == 17144) %>% as.data.frame() %>% head(20)
 
-save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = ""))
+save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = "/"))
 
 data.snt.w <- data.crsp.cln.w %>%
   left_join(TRMI.aggr.w, by = c("PERMNO", "Yearweek")) %>%
@@ -1329,7 +1330,7 @@ load("data.snt.w.validation.RData")
 expect_equal(summary(data.snt.w), data.snt.w.validation)
 rm(data.snt.w.validation)
 
-save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = ""))
+save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = "/"))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
@@ -1349,8 +1350,8 @@ rf <- dt.FF6.d %>%
 dt.FF6 <- dt.FF6.d %>%
   rename(Date = Day)
 
-load(paste(filepath, "data.snt.d.RData", sep = ""))
-load(paste(filepath, "data.snt.m.RData", sep = ""))
+load(paste(filepath, "data.snt.d.RData", sep = "/"))
+load(paste(filepath, "data.snt.m.RData", sep = "/"))
 
 data.snt <- data.snt.m %>% 
   select( -c(exchcd, prc, vol, shrout, port.weight, ME, retadj.1mn, snt, snt.diff, snt.glo.diff)) %>%
@@ -1366,14 +1367,14 @@ rf <- dt.FF6.m %>%
 
 dt.FF6 <- dt.FF6.m
 
-load(paste(filepath, "data.snt.m.RData", sep = ""))
+load(paste(filepath, "data.snt.m.RData", sep = "/"))
 data.snt <- data.snt.m %>%
   rename(Date = Yearmon)
 
 # weekly
-load(paste(filepath, "data.crsp.cln.d.RData", sep = ""))
-load(paste(filepath, "TRMI.aggr.w.RData", sep = ""))
-load(paste(filepath, "data.snt.m.RData", sep = ""))
+load(paste(filepath, "data.crsp.cln.d.RData", sep = "/"))
+load(paste(filepath, "TRMI.aggr.w.RData", sep = "/"))
+load(paste(filepath, "data.snt.m.RData", sep = "/"))
 
 data.crsp.cln.w <- data.crsp.cln.d %>%
   filter(year(Day) > start & year(Day) < end) %>%
@@ -1384,7 +1385,7 @@ data.crsp.cln.w <- data.crsp.cln.d %>%
             port.weight = mean(port.weight, na.rm = TRUE)) %>% 
   ungroup
 
-save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = ""))
+save(data.crsp.cln.w, file = paste(filepath, "data.crsp.cln.w.RData", sep = "/"))
 
 data.snt.w <- data.crsp.cln.w %>%
   left_join(TRMI.aggr.w, by = c("PERMNO", "Yearweek")) %>%
@@ -1408,27 +1409,27 @@ rf <- dt.FF6.d %>%
   group_by(Date) %>%
   summarize(RF = prod(1 + RF, na.rm = TRUE) - 1)
 
-save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = ""))
+save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = "/"))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
 
 # # # # #
 # Lagged sentiment?
 lag = 1 #Lag: 1, No lag: 0
-save(lag, file = paste(filepath, "lag.RData", sep = ""))
+save(lag, file = paste(filepath, "lag.RData", sep = "/"))
 data.snt <- data.snt %>% 
   mutate(snt = lag(snt, lag),
          snt.diff = lag(snt.diff, lag),
          snt.glo.diff = lag(snt.glo.diff, lag)) 
 
-save(rf, file = paste(filepath, "rf.RData", sep = ""))
-save(data.snt, file = paste(filepath, "data.snt.RData", sep = ""))
-save(dt.FF6, file = paste(filepath, "dt.FF6.RData", sep = ""))
+save(rf, file = paste(filepath, "rf.RData", sep = "/"))
+save(data.snt, file = paste(filepath, "data.snt.RData", sep = "/"))
+save(dt.FF6, file = paste(filepath, "dt.FF6.RData", sep = "/"))
 
 rm(data.snt.d, data.snt.m, dt.FF6.m, dt.FF6.d)
 
 # Form 5x5 portfolios ####
-load(paste(filepath, "data.snt.RData", sep = ""))
-load(paste(filepath, "rf.RData", sep = ""))
+load(paste(filepath, "data.snt.RData", sep = "/"))
+load(paste(filepath, "rf.RData", sep = "/"))
 
 # function to form sorts
 Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined version
@@ -1513,14 +1514,14 @@ temp6 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.diff
 temp7 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf) #sentiment level
 
 list.5x5.raw.d <- list(temp1, temp2, temp3, temp4, temp5, temp6, temp7)
-save(list.5x5.raw.d, file = paste(filepath, "list.5x5.raw.d.RData", sep = ""))
+save(list.5x5.raw.d, file = paste(filepath, "list.5x5.raw.d.RData", sep = "/"))
 rm(temp1, temp2, temp3, temp4, temp5, temp6, temp7)
 
 list.5x5.pf.d <- list.5x5.raw.d %>% lapply(construct_portfolio)
-save(list.5x5.pf.d, file = paste(filepath, "list.5x5.pf.d.RData", sep = ""))
+save(list.5x5.pf.d, file = paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 table_5x5.d <- list.5x5.raw.d %>% lapply(construct_5x5_table)
-save(table_5x5.d, file = paste(filepath, "table_5x5.d.Rdata", sep = ""))
+save(table_5x5.d, file = paste(filepath, "table_5x5.d.Rdata", sep = "/"))
 
 attr(table_5x5.d, "subheadings") <- c("Panel A: Size-B/M Portfolios",
                                       "Panel B: Size-OP Portfolios",
@@ -1537,7 +1538,7 @@ table_5x5.xtL.d <- table_5x5.d %>%
              digits = 2,
              label = "table_5x5.d")
 
-save(table_5x5.xtL.d, file = paste(filepath, "table_5x5.xtL.d.RData", sep = ""))
+save(table_5x5.xtL.d, file = paste(filepath, "table_5x5.xtL.d.RData", sep = "/"))
 
 print.xtableList(table_5x5.xtL.d,
                  tabular.environment = "tabularx",
@@ -1549,8 +1550,8 @@ print.xtableList(table_5x5.xtL.d,
 rm(list.5x5.raw.d, list.5x5.pf.d, table_5x5.d, table_5x5.xtL.d)
 
 # Additional 5x5 portfolios with Sentiment ####
-load(paste(filepath, "data.snt.RData", sep = ""))
-load(paste(filepath, "rf.RData", sep = ""))
+load(paste(filepath, "data.snt.RData", sep = "/"))
+load(paste(filepath, "rf.RData", sep = "/"))
 
 # load function from above
 
@@ -1573,13 +1574,13 @@ list.5x5.raw2.d <- list(Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun
                         # Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ret.12t2), quo(snt), rf)
                         )
 
-save(list.5x5.raw2.d, file = paste(filepath, "list.5x5.raw2.d.RData", sep = ""))
+save(list.5x5.raw2.d, file = paste(filepath, "list.5x5.raw2.d.RData", sep = "/"))
 
 list.5x5.pf2.d <- list.5x5.raw2.d %>% lapply(construct_portfolio)
-save(list.5x5.pf2.d, file = paste(filepath, "list.5x5.pf2.d.RData", sep = ""))
+save(list.5x5.pf2.d, file = paste(filepath, "list.5x5.pf2.d.RData", sep = "/"))
 
 table_5x52.d <- list.5x5.raw2.d %>% lapply(construct_5x5_table)
-save(table_5x52.d, file = paste(filepath, "table_5x52.d.Rdata", sep = ""))
+save(table_5x52.d, file = paste(filepath, "table_5x52.d.Rdata", sep = "/"))
 
 attr(table_5x52.d, "subheadings") <- c("Panel A: Size-SNT Portfolios",
                                        "Panel B: B/M-SNT Portfolios",
@@ -1607,7 +1608,7 @@ table_5x5.xtL2.d <- table_5x52.d %>%
              digits = 2,
              label = "table_5x52.d")
 
-save(table_5x5.xtL2.d, file = paste(filepath, "table_5x5.xtL2.d.RData", sep = ""))
+save(table_5x5.xtL2.d, file = paste(filepath, "table_5x5.xtL2.d.RData", sep = "/"))
 
 print.xtableList(table_5x5.xtL2.d,
                  tabular.environment = "tabularx",
@@ -1619,8 +1620,8 @@ print.xtableList(table_5x5.xtL2.d,
 rm(list.5x5.raw2.d, list.5x5.pf2.d, table_5x52.d, table_5x5.xtL2.d)
 
 # Form 2x2x3x3 portfolios ####
-load(paste(filepath, "data.snt.RData", sep = ""))
-load(paste(filepath, "rf.RData", sep = ""))
+load(paste(filepath, "data.snt.RData", sep = "/"))
+load(paste(filepath, "rf.RData", sep = "/"))
 
 Form_2x2x3x3_portfolios_new <- function(main, size, value, var3, snt, rf) { # streamlined version
   # forms 5x5 (size x specificed-characteristc) and forms the 25 portfolios
@@ -1749,14 +1750,14 @@ temp9 <- Form_2x2x3x3_portfolios_new(data.snt, quo(lag.ME.Jun), quo(lag.BM.FF), 
 # Form_2x2x3x3_portfolios_new(data.snt, quo(lag.ME.Jun), quo(lag.BM.FF), quo(lag.OpIB), quo(lag.ret.12t2), rf),
 # Form_2x2x3x3_portfolios_new(data.snt, quo(lag.ME.Jun), quo(lag.BM.FF), quo(lag.AstChg), quo(lag.ret.12t2), rf),
 list.2x2x3x3.raw.d <- list(temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, temp9)
-save(list.2x2x3x3.raw.d, file = paste(filepath, "list.2x2x3x3.raw.d.RData", sep = ""))
+save(list.2x2x3x3.raw.d, file = paste(filepath, "list.2x2x3x3.raw.d.RData", sep = "/"))
 rm(temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, temp9)
 
 list.2x2x3x3.pf.d <- list.2x2x3x3.raw.d %>% lapply(construct_portfolio)
-save(list.2x2x3x3.pf.d, file = paste(filepath, "list.2x2x3x3.pf.d.RData", sep = ""))
+save(list.2x2x3x3.pf.d, file = paste(filepath, "list.2x2x3x3.pf.d.RData", sep = "/"))
 
 table_2x2x3x3.d <- list.2x2x3x3.raw.d %>% lapply(construct_2x2x3x3_table)
-save(table_2x2x3x3.d, file = paste(filepath, "table_2x2x3x3.d.RData", sep = ""))
+save(table_2x2x3x3.d, file = paste(filepath, "table_2x2x3x3.d.RData", sep = "/"))
 
 attr(table_2x2x3x3.d, "subheadings") <- c("Panel A: Size-B/M-OP-SNT Portfolios",
                                           "Panel B: Size-B/M-Inv-SNT Portfolios",
@@ -1778,7 +1779,7 @@ table_2x2x3x3.xtL.d <- table_2x2x3x3.d %>%
              digits = 2,
              align = "lrrrcrrrcrrrcrrr")
 
-save(table_2x2x3x3.xtL.d, file = paste(filepath, "table_2x2x3x3.xtL.d.RData", sep = ""))
+save(table_2x2x3x3.xtL.d, file = paste(filepath, "table_2x2x3x3.xtL.d.RData", sep = "/"))
 
 print.xtableList(table_2x2x3x3.xtL.d,
                  tabular.environment = "tabularx",
@@ -1794,8 +1795,8 @@ rm(list.2x2x3x3.raw.d, list.2x2x3x3.pf.d, table_2x2x3x3.d, table_2x2x3x3.xtL.d)
 # Form Factors ####
 
 # Form Factors using 2x3 sorts ####
-load(paste(filepath, "rf.RData", sep = ""))
-load(paste(filepath, "data.snt.RData", sep = ""))
+load(paste(filepath, "rf.RData", sep = "/"))
+load(paste(filepath, "data.snt.RData", sep = "/"))
 
 Form_2x3_Factors_new <- function(main, size, var) { # streamlined version
   # forms 2x3 (size x specificed-characteristc) and forms the 6 portfolios
@@ -1874,19 +1875,19 @@ Form_FF6Ports_snt <- function(df, snt, rf) {
 
 sorts.2x3 <- Form_FF6Ports_snt(data.snt, quo(snt.glo.diff), rf)
 colnames(sorts.2x3) <- sub("My", "", colnames(sorts.2x3))
-save(sorts.2x3, file = paste(filepath, "sorts.2x3.RData", sep = ""))
+save(sorts.2x3, file = paste(filepath, "sorts.2x3.RData", sep = "/"))
 
 sorts.2x3.diff <- Form_FF6Ports_snt(data.snt, quo(snt.diff), rf)
 colnames(sorts.2x3.diff) <- sub("My", "", colnames(sorts.2x3.diff))
-save(sorts.2x3.diff, file = paste(filepath, "sorts.2x3.diff.RData", sep = ""))
+save(sorts.2x3.diff, file = paste(filepath, "sorts.2x3.diff.RData", sep = "/"))
 
 sorts.2x3.lvl <- Form_FF6Ports_snt(data.snt, quo(snt), rf)
 colnames(sorts.2x3.lvl) <- sub("My", "", colnames(sorts.2x3.lvl))
-save(sorts.2x3.lvl, file = paste(filepath, "sorts.2x3.lvl.RData", sep = ""))
+save(sorts.2x3.lvl, file = paste(filepath, "sorts.2x3.lvl.RData", sep = "/"))
 
 # Form Factors using 2x2x2x2x2x2 portfolios ####
-load(paste(filepath, "data.snt.RData", sep = ""))
-load(paste(filepath, "rf.RData", sep = ""))
+load(paste(filepath, "data.snt.RData", sep = "/"))
+load(paste(filepath, "rf.RData", sep = "/"))
 
 Form_2x2x2x2x2x2_Factors_new <- function(main, size, BM, OP, Inv, Mom, Snt) { # streamlined version
   # forms sorted portfolios 2x2x2x2x2x2(size x specificed-characteristc1 x specificed-characteristc2 etc.) and forms 64 portfolios
@@ -2087,24 +2088,24 @@ factors.lvl <- Form_2x2x2x2x2x2_Factors_new(data.snt, quo(lag.ME.Jun), quo(lag.B
                                         quo(lag.ret.12t2), quo(snt)) 
 
 snt.sorts.2x2x2x2x2x2 <- Form_FF6Ports_snt(data.snt, factors, rf)
-save(snt.sorts.2x2x2x2x2x2, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = ""))
+save(snt.sorts.2x2x2x2x2x2, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = "/"))
 
 snt.sorts.2x2x2x2x2x2.diff <- Form_FF6Ports_snt(data.snt, factors.diff, rf)
-save(snt.sorts.2x2x2x2x2x2.diff, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.diff.RData", sep = ""))
+save(snt.sorts.2x2x2x2x2x2.diff, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.diff.RData", sep = "/"))
 
 snt.sorts.2x2x2x2x2x2.lvl <- Form_FF6Ports_snt(data.snt, factors.lvl, rf)
-save(snt.sorts.2x2x2x2x2x2.lvl, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = ""))
+save(snt.sorts.2x2x2x2x2x2.lvl, file = paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = "/"))
 
 rm(factors, factors.diff, factors.lvl)
 
 # Define specification for analysis and regressions ####
-load(paste(filepath, "dt.FF6.RData", sep = ""))
-load(paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = ""))
-load(paste(filepath, "sorts.2x3.RData", sep = ""))
-load(paste(filepath, "snt.sorts.2x2x2x2x2x2.diff.RData", sep = ""))
-load(paste(filepath, "sorts.2x3.diff.RData", sep = ""))
-load(paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = ""))
-load(paste(filepath, "sorts.2x3.lvl.RData", sep = ""))
+load(paste(filepath, "dt.FF6.RData", sep = "/"))
+load(paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = "/"))
+load(paste(filepath, "sorts.2x3.RData", sep = "/"))
+load(paste(filepath, "snt.sorts.2x2x2x2x2x2.diff.RData", sep = "/"))
+load(paste(filepath, "sorts.2x3.diff.RData", sep = "/"))
+load(paste(filepath, "snt.sorts.2x2x2x2x2x2.lvl.RData", sep = "/"))
+load(paste(filepath, "sorts.2x3.lvl.RData", sep = "/"))
 
 sort.selector <- 1 #1: glo.diff 2: diff 3: level
 factor.selector <- 1  #1: 2x3 sorts, 2: 2x2x2x2x2x2 sorts
@@ -2123,12 +2124,12 @@ if (sort.selector  ==  1 && factor.selector == 1) {
   sorts <- snt.sorts.2x2x2x2x2x2.lvl
 }
 
-save(sorts, file = paste(filepath, "sorts.RData", sep = ""))
+save(sorts, file = paste(filepath, "sorts.RData", sep = "/"))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Preparation ####
 
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 y <- "mimicking portfolios" #indicator for WRDS
 
@@ -2176,14 +2177,14 @@ list.full <- list.5x5.pf.d %>% lapply(run_model, full.factors)
 list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
 
 # save models
-# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = ""))
-# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = ""))
-# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = ""))
-# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = ""))
-# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = ""))
-# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = ""))
-# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = ""))
-# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = ""))
+# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = "/"))
+# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = "/"))
+# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = "/"))
+# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = "/"))
+# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = "/"))
+# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = "/"))
+# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = "/"))
+# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = "/"))
 
 # Model performance on factor 25 mimicking portfolios - sentiment split ####
 
@@ -2233,19 +2234,19 @@ as.data.frame(list.ff3.snt[[1]][[2]] %>%
                 filter(p.value < 0.1))
 
 # save models
-# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = ""))
-# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = ""))
-# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = ""))
-# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = ""))
-# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = ""))
-# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = ""))
-# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = ""))
-# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = ""))
+# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = "/"))
+# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = "/"))
+# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = "/"))
+# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = "/"))
+# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = "/"))
+# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = "/"))
+# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = "/"))
+# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = "/"))
 
 # Model performance on factor 25 mimicking portfolios incl higher moments of PMN ####
 
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.d.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 y <- "mimicking portfolios" #indicator for WRDS
 
@@ -2307,14 +2308,14 @@ list.full <- list.5x5.pf.d %>% lapply(run_model, full.factors)
 list.full.snt <- list.5x5.pf.d %>% lapply(run_model, full.snt.factors)
 
 # save models
-# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = ""))
-# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = ""))
-# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = ""))
-# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = ""))
-# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = ""))
-# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = ""))
-# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = ""))
-# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = ""))
+# save(list.ff3, file = paste(filepath, "sorts.list.ff3.RData", sep = "/"))
+# save(list.ff3.snt, file = paste(filepath, "sorts.list.ff3.snt.RData", sep = "/"))
+# save(list.ff5, file = paste(filepath, "sorts.list.ff5.RData", sep = "/"))
+# save(list.ff5.snt, file = paste(filepath, "sorts.list.ff5.snt.RData", sep = "/"))
+# save(list.ch4, file = paste(filepath, "sorts.list.ch4.RData", sep = "/"))
+# save(list.ch4.snt, file = paste(filepath, "sorts.list.ch4.snt.RData", sep = "/"))
+# save(list.full, file = paste(filepath, "sorts.list.full.RData", sep = "/"))
+# save(list.full.snt, file = paste(filepath, "sorts.list.full.snt.RData", sep = "/"))
 
 # Average absolute intercept ####
 # the smaller the better
@@ -2370,7 +2371,7 @@ list.ff3.snt[[1]][[2]] %>% filter(term == "(Intercept)")
 list.ff3.snt[[1]][[2]] %>% filter(term %in% c("orthoPMNP", "orthoPMNN"))
 
 print(aai.stats)
-save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = ""))
+save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = "/"))
 
 # # show significance of coefficients
 # for (i in 1:length(list.ff3)) {
@@ -2428,7 +2429,7 @@ for (i in 1:length(list.5x5.pf.d)) {
 }
 
 print(GRS.stats)
-save(GRS.stats, file = paste(filepath, "GRS.stats.RData", sep = ""))
+save(GRS.stats, file = paste(filepath, "GRS.stats.RData", sep = "/"))
 
 # p Value of intercepts ####
 
@@ -2452,7 +2453,7 @@ for (i in 1:length(list.ff3)) {
 }
 
 print(aai.p.value.stats)
-save(aai.p.value.stats, file = paste(filepath, "aai.p.value.stats.RData", sep = ""))
+save(aai.p.value.stats, file = paste(filepath, "aai.p.value.stats.RData", sep = "/"))
 
 
 # Average absolute intercept over average absolute value of r ####
@@ -2493,7 +2494,7 @@ for (i in 1:length(list.ff3)) {
 }
 
 print(aaiOaar.stats)
-save(aaiOaar.stats, file = paste(filepath, "aaiOaar.stats.RData", sep = ""))
+save(aaiOaar.stats, file = paste(filepath, "aaiOaar.stats.RData", sep = "/"))
 
 
 # Average absolute squared intercept over average absolute squared value of r - NOT WORKING ####
@@ -2557,7 +2558,7 @@ aaiOaar2.stats <- list(
         list.5x5.pf[[5]] %>% aaiOaar2.fct(list.full[[5]]),
         list.5x5.pf[[5]] %>% aaiOaar2.fct(list.full.snt[[5]])))
 
-save(aaiOaar2.stats, file = paste(filepath, "aaiOaar2.stats.RData", sep = ""))
+save(aaiOaar2.stats, file = paste(filepath, "aaiOaar2.stats.RData", sep = "/"))
 
 
 # Average 1-R2 as a similar metric to the previous one ####
@@ -2584,12 +2585,12 @@ for (i in 1:length(list.ff3)) {
   )
 }
 print(OnemR2.stats)
-save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = ""))
+save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = "/"))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Model performance on single stocks  ####
 
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "data.snt.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "data.snt.RData", sep = "/"))
 
 stock.ret <- data.snt %>%
   select(Date, PERMNO, Ret = retadj.1mn) 
@@ -2638,24 +2639,24 @@ list.full <- stock.ret %>% run_model_stocks(full.factors)
 list.full.snt <- stock.ret %>% run_model_stocks(full.snt.factors)
 
 # Save models
-# save(list.ff3, file = paste(filepath, "list.ff3.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff3.snt, file = paste(filepath, "list.ff3.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff5, file = paste(filepath, "list.ff5.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff5.snt, file = paste(filepath, "list.ff5.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ch4, file = paste(filepath, "list.ch4.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ch4.snt, file = paste(filepath, "list.ch4.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.full, file = paste(filepath, "list.full.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.full.snt, file = paste(filepath, "list.full.snt.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ff3, file = paste(filepath, "list.ff3.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff3.snt, file = paste(filepath, "list.ff3.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff5, file = paste(filepath, "list.ff5.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff5.snt, file = paste(filepath, "list.ff5.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ch4, file = paste(filepath, "list.ch4.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ch4.snt, file = paste(filepath, "list.ch4.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.full, file = paste(filepath, "list.full.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.full.snt, file = paste(filepath, "list.full.snt.stocks.sorts.glo.diff.RData", sep = "/"))
 
 # load models if needed
-# load(file = paste(filepath, "list.ff3.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff3.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff5.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff5.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ch4.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ch4.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.full.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.full.snt.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ff3.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff3.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff5.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff5.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ch4.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ch4.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.full.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.full.snt.stocks.RData", sep = "/"))
 
 # Average absolute intercept ####
 # the smaller the better
@@ -2681,7 +2682,7 @@ for (i in 1:1) {
 }
 
 print(aai.stats)
-save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = ""))
+save(aai.stats, file = paste(filepath, "aai.stats.RData", sep = "/"))
 
 # show significance of coefficients
 # print(list.ff3.snt[[2]] %>%
@@ -2737,7 +2738,7 @@ for (i in 1:length(list.5x5.pf.d)) {
 }
 
 print(GRS.stats)
-save(GRS.stats, file = paste(filepath, "GRS.stats.RData", sep = ""))
+save(GRS.stats, file = paste(filepath, "GRS.stats.RData", sep = "/"))
 
 # p Value of intercepts ####
 
@@ -2761,7 +2762,7 @@ for (i in 1:1) {
 }
 
 print(aai.p.value.stats)
-save(aai.p.value.stats, file = paste(filepath, "aai.p.value.stats.RData", sep = ""))
+save(aai.p.value.stats, file = paste(filepath, "aai.p.value.stats.RData", sep = "/"))
 
 
 # Average absolute intercept over average absolute value of r - NOT WORKING ####
@@ -2801,7 +2802,7 @@ for (i in 1:length(list.ff3)) {
 }
 
 print(aaiOaar.stats)
-save(aaiOaar.stats, file = paste(filepath, "aaiOaar.stats.RData", sep = ""))
+save(aaiOaar.stats, file = paste(filepath, "aaiOaar.stats.RData", sep = "/"))
 
 
 # Average absolute squared intercept over average absolute squared value of r - NOT WORKING ####
@@ -2865,7 +2866,7 @@ aaiOaar2.stats <- list(
         list.5x5.pf[[5]] %>% aaiOaar2.fct(list.full[[5]]),
         list.5x5.pf[[5]] %>% aaiOaar2.fct(list.full.snt[[5]])))
 
-save(aaiOaar2.stats, file = paste(filepath, "aaiOaar2.stats.RData", sep = ""))
+save(aaiOaar2.stats, file = paste(filepath, "aaiOaar2.stats.RData", sep = "/"))
 
 
 # Average 1-R2 as a similar metric to the previous one ####
@@ -2892,12 +2893,12 @@ for (i in 1:1) {
   )
 }
 print(OnemR2.stats)
-save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = ""))
+save(OnemR2.stats, file = paste(filepath, "OnemR2.stats.RData", sep = "/"))
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Regressions of single stocks directly on sentiment  ####
 
-load(paste(filepath, "sorts.RData", sep = ""))
-load(paste(filepath, "data.snt.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "data.snt.RData", sep = "/"))
 
 stock.ret <- data.snt %>%
   select(Date, PERMNO, Ret = retadj.1mn, snt, snt.glo.diff) %>% 
@@ -2949,28 +2950,27 @@ list.full <- stock.ret %>% run_model_stocks(full.factors)
 list.full.snt <- stock.ret %>% run_model_stocks_direct_sentiment(full.snt.factors)
 
 # Save models
-# save(list.ff3, file = paste(filepath, "list.ff3.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff3.snt, file = paste(filepath, "list.ff3.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff5, file = paste(filepath, "list.ff5.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ff5.snt, file = paste(filepath, "list.ff5.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ch4, file = paste(filepath, "list.ch4.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.ch4.snt, file = paste(filepath, "list.ch4.snt.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.full, file = paste(filepath, "list.full.stocks.sorts.glo.diff.RData", sep = ""))
-# save(list.full.snt, file = paste(filepath, "list.full.snt.stocks.sorts.glo.diff.RData", sep = ""))
+# save(list.ff3, file = paste(filepath, "list.ff3.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff3.snt, file = paste(filepath, "list.ff3.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff5, file = paste(filepath, "list.ff5.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ff5.snt, file = paste(filepath, "list.ff5.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ch4, file = paste(filepath, "list.ch4.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.ch4.snt, file = paste(filepath, "list.ch4.snt.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.full, file = paste(filepath, "list.full.stocks.sorts.glo.diff.RData", sep = "/"))
+# save(list.full.snt, file = paste(filepath, "list.full.snt.stocks.sorts.glo.diff.RData", sep = "/"))
 
 # load models if needed
-# load(file = paste(filepath, "list.ff3.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff3.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff5.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ff5.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ch4.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.ch4.snt.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.full.stocks.RData", sep = ""))
-# load(file = paste(filepath, "list.full.snt.stocks.RData", sep = ""))
+# load(file = paste(filepath, "list.ff3.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff3.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff5.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ff5.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ch4.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.ch4.snt.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.full.stocks.RData", sep = "/"))
+# load(file = paste(filepath, "list.full.snt.stocks.RData", sep = "/"))
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Neural Network using Keras ####
-filepath = getwd()
 
 library(tidyverse) # general utility functions
 library(caret) # machine learning utility functions
@@ -2982,8 +2982,8 @@ library(sjPlot)
 # use_virtualenv('~/.virtualenvs/R_t_27') on WRDS cloud
 
 # Load data
-load(paste(filepath, "/sorts.RData", sep = ""))
-load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 target <- list.5x5.pf.d[[1]] %>% 
   select(Date, S1.P1)
@@ -3231,8 +3231,8 @@ get.mav <- function(bp,n=2){
   c(bp[1:(n - 1)],rollapply(1 + bp,width = n,prod,align = "right", na.rm = TRUE) - 1)
 }
 
-load(paste(filepath, "/sorts_new.RData", sep = ""))
-load(paste(filepath, "/list.5x5.pf.d_new.RData", sep = ""))
+load(paste(filepath, "sorts_new.RData", sep = "/"))
+load(paste(filepath, "/list.5x5.pf.d_new.RData", sep = "/"))
 
 target <- list.5x5.pf.d[[1]] %>% 
   select(Date, S1.P1)
@@ -3397,8 +3397,8 @@ plot(predictions)
 filepath = getwd()
 
 # Load data
-load(paste(filepath, "/sorts.RData", sep = ""))
-load(paste(filepath, "/list.5x5.pf.d.RData", sep = ""))
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 factor.portfolios <- list.5x5.pf.d %>% 
   list_df2df() %>% 
@@ -3507,7 +3507,7 @@ result <- train(net, MktRf, ret, error.criterium="LMS", report=TRUE, show.step=1
 
 # Merge industry classification to sentiment data
 
-load(paste(filepath, "data.snt.d.RData", sep = ""))
+load(paste(filepath, "data.snt.d.RData", sep = "/"))
 
 # sentiment by sector 
 data.snt.sector.d <- data.snt.d %>% 
@@ -3530,7 +3530,7 @@ data.snt.sector.d <- data.snt.d %>%
             N = n_distinct(PERMNO),
             t.test = t.test(aggr.snt)$p.value)
 
-save(data.snt.sector.d, file = paste(filepath, "data.snt.sector.d.RData", sep = ""))
+save(data.snt.sector.d, file = paste(filepath, "data.snt.sector.d.RData", sep = "/"))
 
 # Get sector names
 naics.codes <- read.csv("NAICS_codes.csv")
@@ -3539,7 +3539,7 @@ data.snt.sector.d <- data.snt.sector.d %>%
   merge(naics.codes, by.x = "Var", by.y = "Sector", all.x = TRUE) %>%
   select(Var, Name, Mean, Median, SD, N)
 
-save(data.snt.sector.d, file = paste(filepath, "data.snt.sector.d.RData", sep = ""))
+save(data.snt.sector.d, file = paste(filepath, "data.snt.sector.d.RData", sep = "/"))
 
 # define grouping function
 
@@ -3581,7 +3581,7 @@ data.snt.liq.d <- data.snt.d %>%
   mutate(Name = Var) %>%
   select(Var, Name, Mean, Median, SD, N)
 
-save(data.snt.liq.d, file = paste(filepath, "data.snt.liq.d.RData", sep = ""))
+save(data.snt.liq.d, file = paste(filepath, "data.snt.liq.d.RData", sep = "/"))
 
 # sentiment by size 
 
@@ -3589,7 +3589,7 @@ data.snt.size.d <- Form_sentiment_summary_by_group(data.snt.d, quo(ME)) %>%
   mutate(Name = Var) %>%
   select(Var, Name, Mean, Median, SD, N)
 
-save(data.snt.size.d, file = paste(filepath, "data.snt.size.d.RData", sep = ""))
+save(data.snt.size.d, file = paste(filepath, "data.snt.size.d.RData", sep = "/"))
 
 # sentiment by exchange
 data.snt.exchg.d <- data.snt.d %>% 
@@ -3609,7 +3609,7 @@ data.snt.exchg.d <- data.snt.d %>%
             SD = sd(aggr.snt, na.rm = TRUE)*100,
             N = n_distinct(PERMNO))
 
-save(data.snt.exchg.d, file = paste(filepath, "data.snt.exchg.d.RData", sep = ""))
+save(data.snt.exchg.d, file = paste(filepath, "data.snt.exchg.d.RData", sep = "/"))
 
 # Create exchange code table
 exchcd.codes <- as.data.frame(
@@ -3623,7 +3623,7 @@ data.snt.exchg.d <- data.snt.exchg.d %>%
   merge(exchcd.codes, by = "Var", all.x = TRUE) %>%
   select(Var, Name, Mean, Median, SD, N)
 
-save(data.snt.exchg.d, file = paste(filepath, "data.snt.exchg.d.RData", sep = ""))
+save(data.snt.exchg.d, file = paste(filepath, "data.snt.exchg.d.RData", sep = "/"))
 
 # Aggregate results into Latex table
 snt.summary.d <- list(data.snt.sector.d, data.snt.liq.d, data.snt.size.d, data.snt.exchg.d)
@@ -3633,7 +3633,7 @@ attr(snt.summary.d, "subheadings") <- c("Panel A: Sentiment by Sector",
                                         "Panel C: Sentiment by Size",
                                         "Panel D: Sentiment by Exchange")
 
-save(snt.summary.d, file = paste(filepath, "snt.summary.d.RData", sep = ""))
+save(snt.summary.d, file = paste(filepath, "snt.summary.d.RData", sep = "/"))
 
 snt.summary.xtL.d <- snt.summary.d %>% 
   xtableList(tabular.environment = "tabularx",
@@ -3642,7 +3642,7 @@ snt.summary.xtL.d <- snt.summary.d %>%
              include.rownames = FALSE,
              label = "table_snt_desc")
 
-save(snt.summary.xtL.d, file = paste(filepath, "snt.summary.xtL.d.RData", sep = ""))
+save(snt.summary.xtL.d, file = paste(filepath, "snt.summary.xtL.d.RData", sep = "/"))
 
 print.xtableList(snt.summary.xtL.d,
                  tabular.environment = "tabularx",
@@ -3724,9 +3724,9 @@ sorts %>% check_factors(dt.FF6, start, end)
 rm(dt.FF6, snt.sorts.2x2x2x2x2x2, sorts.2x3, snt.sorts.2x2x2x2x2x2.diff, snt.sorts.2x2x2x2x2x2.lvl, sorts.2x3.diff, sorts.2x3.lvl)
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Run statistics on factors  ####
-load(paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = ""))
-load(paste(filepath, "sorts.2x3.RData", sep = ""))
-load(paste(filepath, "dt.FF6.RData", sep = ""))
+load(paste(filepath, "snt.sorts.2x2x2x2x2x2.RData", sep = "/"))
+load(paste(filepath, "sorts.2x3.RData", sep = "/"))
+load(paste(filepath, "dt.FF6.RData", sep = "/"))
 
 snt.sorts <- dt.FF6 %>%
   select(Date, RF, MktRF) %>%
@@ -3774,7 +3774,7 @@ factor_sum_stats <- function(df) {
                                 snt.factors.corr.r,
                                 snt.factors.corr.P)
   
-  save(snt.table_factors_sum, file = paste(filepath, "snt.table_factors_sum.RData", sep = ""))
+  save(snt.table_factors_sum, file = paste(filepath, "snt.table_factors_sum.RData", sep = "/"))
   
   attr(snt.table_factors_sum, "subheadings") <- c("Panel A: Average, standard deviation and one-sample t-statistics for monthly returns",
                                                   "REMOVE",
@@ -3789,7 +3789,7 @@ factor_sum_stats <- function(df) {
                label = "snt.table_factors_sum",
                digits = 2)
   
-  save(snt.table_factors_sum.xtL, file = paste(filepath, "snt.table_factors_sum.xtL.RData", sep = ""))
+  save(snt.table_factors_sum.xtL, file = paste(filepath, "snt.table_factors_sum.xtL.RData", sep = "/"))
   
   print.xtableList(snt.table_factors_sum.xtL,
                    tabular.environment = "tabularx",
@@ -3909,7 +3909,7 @@ attr(regressions_on_factors, "subheadings") <- c("MktRf",
                                                  "UMD",
                                                  "PMN")
 
-save(regressions_on_factors, file = paste(filepath, "regressions_on_factors.RData", sep = ""))
+save(regressions_on_factors, file = paste(filepath, "regressions_on_factors.RData", sep = "/"))
 
 regressions_on_factors.xtL <- regressions_on_factors %>% 
   xtableList(colNames = FALSE,
@@ -3919,7 +3919,7 @@ regressions_on_factors.xtL <- regressions_on_factors %>%
              label = "regressions_on_factors",
              digits = 2)
 
-save(regressions_on_factors.xtL, file = paste(filepath, "regressions_on_factors.xtL.RData", sep = ""))
+save(regressions_on_factors.xtL, file = paste(filepath, "regressions_on_factors.xtL.RData", sep = "/"))
 
 print.xtableList(regressions_on_factors.xtL,
                  tabular.environment = "tabularx",
@@ -3955,8 +3955,8 @@ run_model <- function(df, factors){
 }
 
 # load data
-load(paste(filepath, "snt.sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.RData", sep = ""))
+load(paste(filepath, "snt.sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.RData", sep = "/"))
 
 # determine fully-fledged model incl. sentiment
 full.snt.factors <- snt.sorts %>%
@@ -4057,8 +4057,8 @@ run_model <- function(df, factors){
 }
 
 # load data
-load(paste(filepath, "snt.sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.RData", sep = ""))
+load(paste(filepath, "snt.sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.RData", sep = "/"))
 
 # determine fully-fledged model incl. sentiment
 full.snt.factors <- snt.sorts %>%
@@ -4159,8 +4159,8 @@ run_model <- function(df, factors){
 }
 
 # load data
-load(paste(filepath, "snt.sorts.RData", sep = ""))
-load(paste(filepath, "list.5x5.pf.RData", sep = ""))
+load(paste(filepath, "snt.sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.RData", sep = "/"))
 
 # determine fully-fledged model incl. sentiment
 full.snt.factors <- snt.sorts %>%
@@ -4244,8 +4244,8 @@ require(foreign)
 require(plm)
 require(lmtest)
 
-load(paste(filepath, "data.snt.d.RData", sep = ""))
-load(paste(filepath, "snt.sorts.RData", sep = ""))
+load(paste(filepath, "data.snt.d.RData", sep = "/"))
+load(paste(filepath, "snt.sorts.RData", sep = "/"))
 
 ##Double-clustering formula (Thompson, 2011)
 vcovDC <- function(x, ...){
@@ -4257,11 +4257,11 @@ newdata <- snt.sorts %>%
   merge(data.snt.d, by = "Day") %>%
   mutate(year = format(Day, "%Y"))
 
-save(newdata, file = paste(filepath, "newdata.RData", sep = ""))
+save(newdata, file = paste(filepath, "newdata.RData", sep = "/"))
 
 fpmg <- pmg(retadj.1mn ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, newdata, index = c("Day", "PERMNO"))
 
-save(fpmg, file = paste(filepath, "fpmg.RData", sep = ""))
+save(fpmg, file = paste(filepath, "fpmg.RData", sep = "/"))
 
 coeftest(fpmg)
 
