@@ -925,7 +925,7 @@ sqlConnString <- "Driver=SQL Server;Server=localhost; Database=PhD;trusted_conne
 sqlRowsPerRead = 10000
 
 # Construct query
-TRMI.query = paste("SELECT * FROM MarketPsych.dbo.CMPNY_UDAI where dataType = 'News_Social'", sep = "")
+TRMI.query = paste("SELECT ticker, windowTimestamp, buzz, sentiment FROM MarketPsych.dbo.CMPNY_UDAI where dataType = 'News_Social'", sep = "")
 
 # Construct path
 TRMI.path <- RxSqlServerData(
@@ -941,12 +941,12 @@ TRMI.xdf <-
     #    "TRMI.xdf",
     overwrite = TRUE,
     transforms = list(
-      windowTimestamp = as.POSIXct(windowTimestamp, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "GMT")
+      windowTimestamp = as.POSIXct(windowTimestamp, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "GMT"),
+      buzz = as.numeric(buzz),
+      sentiment = as.numeric(sentiment)
     ),
     rowsPerRead = sqlRowsPerRead
   )
-
-
 
 save(TRMI.xdf, file = "TRMI.RData")
 
@@ -959,12 +959,6 @@ sqlConnString <- "Driver = SQL Server;Server = localhost; Database = PhD;trusted
 # Define number of rows for chunk processing
 sqlRowsPerRead = 10000
 
-# Set path 
-path <- "F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R"
-
-# Create an xdf file name
-localXdfFileName <- file.path(path, "TRMI.xdf")
-
 # Construct query
 TRMI.query = paste("SELECT ticker, windowTimestamp, buzz, sentiment, optimism, joy, loveHate, trust, anger, conflict, fear, gloom, stress, surprise, timeUrgency, uncertainty, violence, emotionVsFact, marketRisk, longShort, longShortForecast, priceDirection, priceForecast, volatility, analystRating, debtDefault, dividends, innovation, earningsForecast, fundamentalStrength, laborDispute, layoffs, litigation, managementChange, managementTrust, mergers, cyberCrime FROM MarketPsych.dbo.CMPNY_UDAI where dataType = 'News_Social'", sep = "")
 
@@ -976,7 +970,7 @@ TRMI.path <- RxSqlServerData(
 )
 
 # Import the news and social media data into a xdf file
-TRMI.xdf <-
+TRMI.full.xdf <-
   rxImport(
     TRMI.path,
     #    "TRMI.xdf",
@@ -1020,8 +1014,70 @@ TRMI.xdf <-
     append  = 'none',
     rowsPerRead = sqlRowsPerRead
   )
-save(TRMI.xdf, file = "TRMI.full.RData")
+save(TRMI.full.xdf, file = paste(filepath, "TRMI.full.RData", sep "/"))
 
+# copy to WRDS cloud
+
+# Run on cloud
+load(paste(filepath, "ticker.PERMNO.match.RData", sep = "/"))
+ticker.PERMNO.match <- ticker_PERMNO_match %>%
+  mutate(PERMNO = as.factor(LPERMNO),
+         LINKDT = as.Date(as.numeric(LINKDT)),
+         LINKENDDT = as.Date(LINKENDDT, format = "%Y%m%d"),
+         LINKTYPE = factor(LINKTYPE, levels = c("LC", "LU", "LS")),
+         LINKPRIM = factor(LINKPRIM, levels = c("P", "C", "J")))
+
+# Add identifiers to TRMI
+load(paste(filepath, "TRMI.full.RData", sep = "/"))
+
+TRMI <- TRMI.full.xdf %>%
+  merge(ticker.PERMNO.match, by.x = "ticker", by.y = "tic") %>% # inner join
+  mutate(Day = as.Date(windowTimestamp)) %>%
+  filter(Day >=  LINKDT & (Day <=  LINKENDDT | is.na(LINKENDDT))) %>%
+  # prioritize linktype, linkprim based on order of preference/primary if duplicate
+  arrange(Day, PERMNO, LINKTYPE, LINKPRIM) %>%
+  dplyr::distinct(Day, PERMNO, .keep_all = TRUE)
+
+# Function to aggregate TRMI data to weekly
+TRMI_aggr_level_w <- function(df){
+  return( df %>% 
+            filter(!is.na(LPERMNO),
+                   !weekdays(Day) %in% c("Saturday", "Sunday")) %>% # only where PERMNO is not missing, remove weekends
+            mutate(Yearweek = yearweek(as.Date(windowTimestamp))) %>%
+            arrange(PERMNO, Yearweek)  %>%
+            group_by(PERMNO, Yearweek) %>% 
+            summarize_at(vars(sentiment:cyberCrime), list(~ weighted.mean(., buzz, na.rm = TRUE))) %>%
+            group_by(PERMNO) %>%
+            arrange(Yearweek) %>%
+            mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            #mutate(snt = na.locf0(snt)) %>% #na.locf0 / replace_na(snt, 0) / 
+            ungroup
+  )
+}
+
+# Function to get global change of sentiment for weekly
+TRMI_aggr_glo_diff_w <- function(df){ 
+  browser()
+  
+  temp <- df %>% 
+            TRMI_aggr_level_w %>% 
+            group_by(PERMNO) 
+  
+  temp2 <- temp %>%
+            mutate_at(vars(sentiment:cyberCrime), list(glo.diff ~ . - mean(., na.rm = TRUE))) %>%
+            mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            ungroup
+  return(temp2)
+}
+
+TRMI.aggr.w.full <- TRMI %>%
+  TRMI_aggr_glo_diff_w() %>% 
+  arrange(PERMNO, Yearweek) 
+
+save(TRMI.aggr.w.full, file = paste(filepath, "TRMI.aggr.w.full.RData", sep = "/"))
+rm(snt.selector, TRMI, TRMI.xdf, ticker.PERMNO.match)
 
 # Copy TRMI.RData and FF5 data file to WRDS ####
 
@@ -2970,7 +3026,7 @@ list.full.snt <- stock.ret %>% run_model_stocks_direct_sentiment(full.snt.factor
 # load(file = paste(filepath, "list.full.snt.stocks.RData", sep = "/"))
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
-# Neural Network using Keras ####
+# Load libraries ####
 
 library(tidyverse) # general utility functions
 library(caret) # machine learning utility functions
@@ -2979,7 +3035,27 @@ library(keras)
 library(tensorflow)
 library(reticulate)
 library(sjPlot)
+library(magrittr)
+
 # use_virtualenv('~/.virtualenvs/R_t_27') on WRDS cloud
+
+# Prepare for Keras ####
+r2_keras <- custom_metric("r2_keras", function(y_true, y_pred){
+  SS_res =  k_sum(k_square(y_true - y_pred))
+  SS_tot = k_sum(k_square(y_true - k_mean(y_true)))
+  return( 1 - SS_res/(SS_tot))
+  # SS_res =  sum((y_true - y_pred)^2)
+  # SS_tot = sum((y_true - mean(y_true, na.rm = T))^2)
+  # return( 1 - SS_res/(SS_tot) )
+})
+
+# set global default to always show metrics
+options(keras.view_metrics = TRUE)
+
+# set a random seed for reproducability
+set.seed(123)
+
+# Prepare data ####
 
 # Load data
 load(paste(filepath, "sorts.RData", sep = "/"))
@@ -2994,15 +3070,6 @@ data <- sorts %>%
   na.omit() %>% 
   select(-Date) %>% 
   as.matrix() 
-
-dataset <- sorts %>% 
-  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
-  merge(list.5x5.pf.d[[1]][1:2], by = "Date") %>% 
-  select(-Date) %>% 
-  na.omit() %>% 
-  as.matrix() 
-
-data = dataset
 
 # Create datasets for training, validation and test
 no.train <- 0.50
@@ -3063,10 +3130,10 @@ generator <- function(data, lookback, delay, min_index, max_index,
   }
 }
 
-lookback <- 26 # How many timesteps back the input data should go? weekly: 4x3 for a quarter
+lookback <- 4 # How many timesteps back the input data should go? weekly: 4x3 for a quarter
 step <- 1 # The period, in timesteps, at which you sample data
 delay <- 1 # How many timesteps in the future the target should be? next week
-batch_size <- 256
+batch_size <- 32
 
 train_gen <- generator(
   data,
@@ -3104,24 +3171,9 @@ val_steps <- (max.valid - min.valid - lookback) #/ batch_size
 # How many steps to draw from test_gen in order to see the entire test set
 test_steps <- (nrow(data) - min.test - lookback) #/ batch_size
 
-# set a random seed for reproducability
-set.seed(123)
-
-r2_keras <- custom_metric("r2_keras", function(y_true, y_pred){
-  SS_res =  k_sum(k_square(y_true - y_pred))
-  SS_tot = k_sum(k_square(y_true - k_mean(y_true)))
-  return( 1 - SS_res/(SS_tot))
-  # SS_res =  sum((y_true - y_pred)^2)
-  # SS_tot = sum((y_true - mean(y_true, na.rm = T))^2)
-  # return( 1 - SS_res/(SS_tot) )
-})
-
-# set global default to always show metrics
-options(keras.view_metrics = TRUE)
-
 # Linear benchmark model ####
 
-lin.model <- lm(train.data[,ncol(train.data)] ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = as.data.frame(train.data))
+lin.model <- lm(train.data[,ncol(train.data)] ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
 
 # R2 not adjusted yet
 eval_fct <- function(pred, act){
@@ -3184,110 +3236,6 @@ base.history <- model %>% fit_generator(
   epochs = 5,
   validation_data = val_gen,
   validation_steps = val_steps)
-
-base.history %>% plot() + geom_line()
-save(base.history, file = "base.history.RData")
-
-# Simple Linear model with different lags ####
-
-model <- keras_model_sequential() %>% 
-  layer_dense(units = 1, activation = "linear") 
-
-model %>% compile(
-  optimizer = optimizer_rmsprop(),
-  loss = "mse",
-  metrics = r2_keras)
-
-model %>% fit(
-  x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
-  y = subset(train.data, TRUE, c(S1.P1)),
-  batch_size = 8,
-  # steps_per_epoch = 500,
-  epochs = 20,
-  validation_data = list(subset(valid.data, TRUE, c(MktRf:PMN_week52)),
-                         subset(valid.data, TRUE, c(S1.P1)))
-  # callbacks = list(
-  #   callback_early_stopping(patience = 2))
-)
-
-linear.history %>% plot() + geom_line()
-save(linear.history, file = "linear.history.RData")
-
-# plot_model(linear.history)
-# get_weights(linear.history)
-
-
-# Basic machine learning approach with different lags####
-
-#lags
-# 1, 2, 3, 4 weeks
-# 2 , 3, , 6 , 12 months
-
-get.mav <- function(bp,n=2){
-  require(zoo)
-  #if (is.na(bp[1])) bp[1] <- mean(bp,na.rm = TRUE)
-  #bp <- na.locf(bp,na.rm = FALSE)
-  if (length(bp) < n) return(bp)
-  c(bp[1:(n - 1)],rollapply(1 + bp,width = n,prod,align = "right", na.rm = TRUE) - 1)
-}
-
-load(paste(filepath, "sorts_new.RData", sep = "/"))
-load(paste(filepath, "/list.5x5.pf.d_new.RData", sep = "/"))
-
-target <- list.5x5.pf.d[[1]] %>% 
-  select(Date, S1.P1)
-
-data <- sorts %>% 
-  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
-  mutate_at(vars(MktRf:PMN), list(~ lag(.,1))) %>% 
-  mutate_at(vars(MktRf:PMN), list(week2 = ~get.mav(., 2),
-                                  week3 = ~get.mav(., 3),
-                                  week4 = ~get.mav(., 4),
-                                  week8 = ~get.mav(., 8),
-                                  week12 = ~get.mav(., 12),
-                                  week26 = ~get.mav(., 26),
-                                  week52 = ~get.mav(., 52))) %>% 
-  merge(target, by = "Date") %>%
-  na.omit() %>% 
-  select(-Date) %>% 
-  as.matrix() 
-
-# Create datasets for training, validation and test
-no.train <- 0.50
-no.valid <- 0.25 
-no.test <- 0.25
-
-min.train <- 1
-max.train <- round(nrow(data)*no.train)
-min.valid <- round(nrow(data)*no.train) + 1
-max.valid <- round(nrow(data)*(no.train + no.valid))
-min.test <-  round(nrow(data)*(no.train + no.valid)) + 1
-max.test <-  nrow(data)
-
-train.data <- data[min.train:max.train,] %>% na.omit
-valid.data <- data[min.valid:max.valid,] %>% na.omit
-test.data <- data[min.test:max.test,] %>% na.omit
-
-model <- keras_model_sequential() %>% 
-  layer_flatten(input_shape =  c(dim(data)[2] - 1)) %>% 
-  layer_dense(units = 56, activation = "relu") %>% 
-  layer_dense(units = 8, activation = "relu") %>% 
-  layer_dense(units = 1)
-
-model %>% compile(
-  optimizer = optimizer_rmsprop(),
-  loss = "mse",
-  metrics = r2_keras)
-
-base.history.lags <- model %>% fit(
-  x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
-  y = subset(train.data, TRUE, c(S1.P1)),
-  batch_size = 64,
-  epochs = 20,
-  validation_split = .2
-  # callbacks = list(
-  #   callback_early_stopping(patience = 2))
-)
 
 base.history %>% plot() + geom_line()
 save(base.history, file = "base.history.RData")
@@ -3390,6 +3338,131 @@ save(lstm.r2.history, file = "lstm.r2.history.RData")
 (results <- model %>% evaluate_generator(test_gen, steps = test_steps))
 predictions <- model %>% predict_generator(test_gen, steps = test_steps)
 plot(predictions)
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
+# Models with batch data and different lags ####
+# Prepare data ####
+
+#lags
+# 1, 2, 3, 4 weeks
+# 2 , 3, , 6 , 12 months
+
+get.mav <- function(bp,n=2){
+  require(zoo)
+  #if (is.na(bp[1])) bp[1] <- mean(bp,na.rm = TRUE)
+  #bp <- na.locf(bp,na.rm = FALSE)
+  if (length(bp) < n) return(bp)
+  c(bp[1:(n - 1)],rollapply(1 + bp,width = n,prod,align = "right", na.rm = TRUE) - 1)
+}
+
+load(paste(filepath, "sorts.RData", sep = "/"))
+load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
+
+target <- list.5x5.pf.d[[1]] %>% 
+  select(Date, S1.P1)
+
+data <- sorts %>% 
+  select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
+  # mutate_at(vars(MktRf:PMN), list(~ lag(.,1))) %>% lag already in construction of factors
+  mutate_at(vars(MktRf:PMN), list(week2 = ~get.mav(., 2),
+                                  week3 = ~get.mav(., 3),
+                                  week4 = ~get.mav(., 4),
+                                  week8 = ~get.mav(., 8),
+                                  week12 = ~get.mav(., 12),
+                                  week26 = ~get.mav(., 26),
+                                  week52 = ~get.mav(., 52))) %>% 
+  merge(target, by = "Date") %>%
+  na.omit() %>% 
+  magrittr::set_rownames(yearweek(.$Date)) %>% 
+  select(-Date) %>% 
+  as.matrix() 
+
+# Create datasets for training, validation and test
+no.train <- 0.50
+no.valid <- 0.25 
+no.test <- 0.25
+
+min.train <- 1
+max.train <- round(nrow(data)*no.train)
+min.valid <- round(nrow(data)*no.train) + 1
+max.valid <- round(nrow(data)*(no.train + no.valid))
+min.test <-  round(nrow(data)*(no.train + no.valid)) + 1
+max.test <-  nrow(data)
+
+train.data <- data[min.train:max.train,] %>% na.omit
+valid.data <- data[min.valid:max.valid,] %>% na.omit
+test.data <- data[min.test:max.test,] %>% na.omit
+
+# Plot price time series
+test <- cumprod(1 + as.data.frame(data)) * 100
+plot_ly(test, x = test$Date, y = test$S1.P1, type = "scatter", mode = "markers") %>%
+  add_trace(y = test$MktRf, x = test$Date, name = "MktRf", mode = "lines")
+
+# Compile function ####
+compile_fct <- function(model, batch = 32, epochs = 20, callback = NULL){
+  
+  model %>% compile(
+    optimizer = optimizer_rmsprop(),
+    loss = "mse",
+    metrics = r2_keras)
+  
+  trained_model <- model %>% fit(
+    x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
+    y = subset(train.data, TRUE, c(S1.P1)),
+    batch_size = batch,
+    epochs = epochs,
+    validation_data = list(subset(valid.data, TRUE, c(MktRf:PMN_week52)),
+                           subset(valid.data, TRUE, c(S1.P1)))
+    # ,callbacks = list(callback_early_stopping(patience = 2))
+  )
+  return(trained_model)
+}
+
+# Simple Linear model with different lags ####
+
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 1, activation = "linear") 
+
+trained_model <- model %>% compile_fct(batch = 32, epochs = 30)
+# trained_model %>% plot() + geom_line()
+
+save(trained_model, file = "linear.history.lags.RData")
+
+
+# Basic machine learning approach with different lags####
+
+model <- keras_model_sequential() %>% 
+  layer_flatten(input_shape =  c(dim(train.data)[2] - 1)) %>% 
+  layer_dense(units = 64, activation = "relu") %>% 
+  layer_dense(units = 8, activation = "relu") %>% 
+  layer_dense(units = 1)
+
+trained_model <- model %>% compile_fct(epochs = 50)
+
+save(trained_model, file = "base.history.lags.RData")
+
+# A first recurrent baseline ####
+
+model <- keras_model_sequential() %>% 
+  layer_gru(units = 32, input_shape = c(NULL, dim(data)[2] - 1)) %>% 
+  layer_dense(units = 1)
+
+trained_model <- model %>% compile_fct()
+
+save(trained_model, file = "rnn.history.lag.RData")
+
+
+# LSTM ####
+
+model = keras_model_sequential() %>% 
+  layer_lstm(units = 8, input_shape = c(dim(data)[1], dim(data)[2] - 1), activation = "relu") %>%  
+  layer_dense(units = 4, activation = "relu") %>% 
+  layer_dense(units = 2) %>% 
+  layer_dense(units = 1)
+
+trained_model <- model %>% compile_fct()
+save(lstm.r2.history, file = "lstm.r2.history.RData")
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
