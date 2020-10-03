@@ -247,18 +247,20 @@ load(paste(filepath, "crsp.dse.RData", sep = "/"))
 load(paste(filepath, "crsp.dsedelist.RData", sep = "/"))
 
 data.crsp.d2 <- crsp.dsf %>%
-  join(crsp.dse, by = c("Day", "permno"), type = "full", match = "all") %>%
-  join(crsp.dsedelist, by = c("Day", "permno"), type = "full", match = "all") %>%
+  merge(crsp.dse, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
+  merge(crsp.dsedelist, by = c("Day", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   rename(PERMNO = permno) %>% 
-  mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
-  mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) 
+  mutate_at(vars(PERMNO, permco, shrcd, exchcd), as.factor) %>%
+  mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) %>% # create retadj by merging ret and dlret
+  arrange(Day, PERMNO) %>%
+  group_by(PERMNO) %>%    
+  mutate_at(vars(shrcd, exchcd), funs(na.locf(., na.rm = FALSE)))  # fill in NA's with latest available (must sort by Date and group by PERMNO)
 
 save(data.crsp.d2, file = paste(filepath, "data.crsp.d2.RData", sep = "/"))
 
-data.crsp.d3 <- data.crsp.d2 %>% # create retadj by merging ret and dlret
-  arrange(Day, PERMNO) %>%
-  group_by(PERMNO) %>%    
-  mutate_at(vars(shrcd, exchcd), list(~ na.locf(., na.rm = FALSE))) %>% # fill in NA's with latest available (must sort by Date and group by PERMNO)
+load(paste(filepath, "data.crsp.d2.RData", sep = "/"))
+
+data.crsp.d3 <- data.crsp.d2 %>%
   mutate(meq = shrout * abs(prc)) %>% # me for each permno
   group_by(Day, permco) %>%
   mutate(ME = sum(meq)) %>% # to calc market cap, merge permnos with same permnco
@@ -275,6 +277,9 @@ save(data.crsp.d4, file = paste(filepath, "data.crsp.d4.RData", sep = "/"))
 data.crsp.d <- data.crsp.d4 %>% # keep only permno with largest meq
   ungroup %>%
   dplyr::distinct(Day, PERMNO, .keep_all = T) # hasn't been issue but just in case
+
+save(data.crsp.d, file = paste(filepath, "data.crsp.d.RData", sep = "/"))
+rm(crsp.dse, crsp.dsf, crsp.dsedelist, data.crsp.d2, data.crsp.d3, data.crsp.d4)
 
 # Unit Test
 # data.crsp.d.validation <- summary(data.crsp.d)
@@ -403,15 +408,15 @@ save(crsp.msedelist, file = paste(filepath, "crsp.msedelist.RData", sep = "/"))
 rm(wrds, res)
 
 # Merge Monthly CRSP  data ####
-# load(paste(filepath, "crsp.msf.RData", sep = "/"))
-# load(paste(filepath, "crsp.mse.RData", sep = "/"))
-# load(paste(filepath, "crsp.msedelist.RData", sep = "/"))
+load(paste(filepath, "crsp.msf.RData", sep = "/"))
+load(paste(filepath, "crsp.mse.RData", sep = "/"))
+load(paste(filepath, "crsp.msedelist.RData", sep = "/"))
 
 data.crsp.m <- crsp.msf %>%
   merge(crsp.mse, by = c("Yearmon", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   merge(crsp.msedelist, by = c("Yearmon", "permno"), all = TRUE, allow.cartesian = TRUE) %>%
   rename(PERMNO = permno) %>% 
-  mutate_at(vars(PERMNO, permco, shrcd, exchcd), list(~ as.factor)) %>%
+  mutate_at(vars(PERMNO, permco, shrcd, exchcd), as.factor) %>%
   mutate(retadj = ifelse(!is.na(ret), ret, ifelse(!is.na(dlret), dlret, NA))) %>% # create retadj by merging ret and dlret
   arrange(Yearmon, PERMNO) %>%
   group_by(PERMNO) %>%    
@@ -426,15 +431,15 @@ data.crsp.m <- data.crsp.m %>%
   slice(1) %>% # keep only permno with largest meq
   ungroup
 
+save(data.crsp.m, file = paste(filepath, "data.crsp.m.RData", sep = "/"))
+rm(crsp.mse, crsp.msf, crsp.msedelist)
+
 # Unit Test
 # data.crsp.m.validation <- summary(data.crsp.m)
 # save(data.crsp.m.validation, file = "data.crsp.m.validation.RData")
 load("data.crsp.m.validation.RData")
 expect_equal(summary(data.crsp.m), data.crsp.m.validation)
 rm(data.crsp.m.validation)
-
-save(data.crsp.m, file = paste(filepath, "data.crsp.m.RData", sep = "/"))
-rm(crsp.mse, crsp.msf, crsp.msedelist)
 
 # Get Davis book equity data ####
 # Merges CRSP and Compustat data fundamentals by PERMNO and DATE (annual-June-end portfolio formation)
@@ -565,9 +570,9 @@ data.both.FF.m.full <- data.both.m %>%
 # Unit Test
 # data.both.FF.m.full.validation <- summary(data.both.FF.m.full)
 # save(data.both.FF.m.full.validation, file = "data.both.FF.m.full.validation.RData")
-load("data.both.FF.m.full.validation.RData")
-expect_equal(summary(data.both.FF.m.full), data.both.FF.m.full.validation)
-rm(data.both.FF.m.full.validation)
+# load("data.both.FF.m.full.validation.RData")
+# expect_equal(summary(data.both.FF.m.full), data.both.FF.m.full.validation)
+# rm(data.both.FF.m.full.validation)
 
 save(data.both.FF.m.full, file = paste(filepath, "data.both.FF.m.full.RData", sep = "/"))
 
@@ -584,9 +589,9 @@ data.both.FF.m <- data.both.FF.m.full %>%
 # Unit test
 # data.both.FF.m.validation <- summary(data.both.FF.m)
 # save(data.both.FF.m.validation, file = "data.both.FF.m.validation.RData")
-load("data.both.FF.m.validation.RData")
-expect_equal(summary(data.both.FF.m), data.both.FF.m.validation)
-rm(data.both.FF.m.validation)
+# load("data.both.FF.m.validation.RData")
+# expect_equal(summary(data.both.FF.m), data.both.FF.m.validation)
+# rm(data.both.FF.m.validation)
 
 save(data.both.FF.m, file = paste(filepath, "data.both.FF.m.RData", sep = "/"))
 rm(data.both.m, data.both.FF.m.full)
@@ -688,16 +693,17 @@ rm(data.both.FF.m, data.crsp.cln.d, data.both.FF.m.unlim, data.crsp.cln.d.unlim)
 # Load FF data - Run on local machine ####
 library(dplyr)
 library(zoo)
-setwd("F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R")
-wb.daily <- read.csv("F-F_Research_Data_5_Factors_2x3_daily.csv")
+library(xlsx)
+setwd("F:/Studium/PhD/HSG/Research/03_FactorModel/3rd R/daily")
+wb.daily <- read.xlsx("F-F_Research_Data_5_Factors_2x3_daily.xlsx",1)
 save("wb.daily", file = "wb.daily.RDATA")
 
 # Copy wb file into wrds directory, rename "RDATA" to "RData" ####
 
 # Import FF6 and Mkt to check data - Run on WRDS Cloud ####
-load(paste(filepath, "wb.daily.RData", sep = "/"))
+load(paste(filepath, "wb_daily.RData", sep = "/"))
 
-dt.FF6.d <- wb.daily %>%
+dt.FF6.d <- wb %>%
   mutate(Day = ymd(Date),
          Mkt = Mkt.RF + RF) %>%
   mutate_at(vars(-Day, -Date), list(~ ./100)) %>%
@@ -829,7 +835,6 @@ start <- 1998
 end <- 2018
 
 dt.myFF6.m <- data.both.FF.m %>%
-  rename(Date = Yearmon) %>%
   Form_FF6Ports %>%
   filter(year(Date) > start & year(Date) < end)
 
@@ -1014,7 +1019,7 @@ TRMI.full.xdf <-
     append  = 'none',
     rowsPerRead = sqlRowsPerRead
   )
-save(TRMI.full.xdf, file = paste(filepath, "TRMI.full.RData", sep "/"))
+save(TRMI.full.xdf, file = paste(filepath, "TRMI.full.RData", sep = "/"))
 
 # copy to WRDS cloud
 
@@ -1056,16 +1061,21 @@ TRMI_aggr_level_w <- function(df){
   )
 }
 
+glo_diff_fct <- function(x){
+  return(x - mean(x, na.rm = T))
+}
+
 # Function to get global change of sentiment for weekly
 TRMI_aggr_glo_diff_w <- function(df){ 
-  browser()
+  # browser()
   
   temp <- df %>% 
             TRMI_aggr_level_w %>% 
             group_by(PERMNO) 
   
+  
   temp2 <- temp %>%
-            mutate_at(vars(sentiment:cyberCrime), list(glo.diff ~ . - mean(., na.rm = TRUE))) %>%
+            mutate_at(vars(sentiment:cyberCrime), list(glo.diff =  ~ glo_diff_fct(.))) %>%
             mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
             mutate_at(vars(sentiment:cyberCrime), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             ungroup
@@ -1083,14 +1093,14 @@ rm(snt.selector, TRMI, TRMI.xdf, ticker.PERMNO.match)
 
 
 # Load TRMI file - run on WRDS ####
-snt.selector <- 1 #1:social, 2:news, 3:news_social
+snt.selector <- 3 #1:social, 2:news, 3:news_social
 
 if (snt.selector  ==  1) {
-  load("TRMI_Social.RData")
+  load(paste(filepath, "TRMI_Social.RData", sep = "/"))
 } else if (snt.selector  ==  2) {
-  load("TRMI_News.RData")
+  load(paste(filepath, "TRMI_News.RData", sep = "/"))
 } else if (snt.selector  ==  3) {
-  load("TRMI_Newssocial.RData")
+  load(paste(filepath, "TRMI_Newssocial.RData", sep = "/"))
 }
 
 load(paste(filepath, "ticker.PERMNO.match.RData", sep = "/"))
@@ -1103,7 +1113,7 @@ ticker.PERMNO.match <- ticker_PERMNO_match %>%
 
 # Add identifiers to TRMI
 TRMI <- TRMI.xdf %>%
-  select(windowTimestamp, ticker, sentiment, buzz) %>%
+  select(windowTimestamp, ticker, sentiment, optimism, joy, fear, buzz) %>%
   merge(ticker.PERMNO.match, by.x = "ticker", by.y = "tic") %>% # inner join
   mutate(Day = as.Date(windowTimestamp)) %>%
   filter(Day >=  LINKDT & (Day <=  LINKENDDT | is.na(LINKENDDT))) %>%
@@ -1149,8 +1159,9 @@ TRMI_man <- function(df){
             mutate_at(vars(sentiment), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
             mutate_at(vars(sentiment), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = na.locf0(sentiment)) %>% #na.locf0 / replace_na(sentiment, 0)
-            rename(snt = sentiment) %>% # added if previous was commented out
-            select(PERMNO, Day, snt) %>%
+            rename(snt = sentiment,
+                   opt = optimism) %>% # added if previous was commented out
+            select(PERMNO, Day, snt, opt, joy, fear) %>%
             ungroup
   )
 }
@@ -1162,14 +1173,17 @@ TRMI_aggr_level <- function(df){
             mutate(Yearmon = as.yearmon(as.Date(windowTimestamp))) %>% 
             arrange(PERMNO, Yearmon) %>%
             group_by(PERMNO, Yearmon) %>% 
-            summarize(snt = weighted.mean(sentiment, buzz, na.rm = TRUE)) %>%
+            summarize(snt = weighted.mean(sentiment, buzz, na.rm = TRUE),
+                      opt = weighted.mean(optimism, buzz, na.rm = TRUE),
+                      joy = weighted.mean(joy, buzz, na.rm = TRUE),
+                      fear = weighted.mean(fear, buzz, na.rm = TRUE)) %>%
             #Fill_TS_NAs_TRMI(quo(Yearmon)) %>%
             group_by(PERMNO) %>%
             arrange(Yearmon) %>%
-            mutate_at(vars(snt), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt, opt, joy, fear), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt, opt, joy, fear), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = replace_na(snt, 0)) %>% #na.locf0
-            select(PERMNO, Yearmon, snt) %>% 
+            select(PERMNO, Yearmon, snt, opt, joy, fear) %>% 
             ungroup
   )
 }
@@ -1182,14 +1196,17 @@ TRMI_aggr_level_w <- function(df){
             mutate(Yearweek = yearweek(as.Date(windowTimestamp))) %>%
             arrange(PERMNO, Yearweek)  %>%
             group_by(PERMNO, Yearweek) %>% 
-            summarize(snt = weighted.mean(sentiment, buzz, na.rm = TRUE)) %>%
+            summarize(snt = weighted.mean(sentiment, buzz, na.rm = TRUE),
+                      opt = weighted.mean(optimism, buzz, na.rm = TRUE),
+                      joy = weighted.mean(joy, buzz, na.rm = TRUE),
+                      fear = weighted.mean(fear, buzz, na.rm = TRUE)) %>%
             #Fill_TS_NAs_TRMI(quo(Yearweek)) %>%  
             group_by(PERMNO) %>%
             arrange(Yearweek) %>%
-            mutate_at(vars(snt), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            mutate_at(vars(snt, opt, joy, fear), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt, opt, joy, fear), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
             #mutate(snt = na.locf0(snt)) %>% #na.locf0 / replace_na(snt, 0) / 
-            select(PERMNO, Yearweek, snt) %>% 
+            select(PERMNO, Yearweek, snt, opt, joy, fear) %>% 
             ungroup
     )
 }
@@ -1200,10 +1217,13 @@ TRMI_aggr_diff_d <- function(df){
             TRMI_man %>% # aggregate data to monthly
             arrange(PERMNO, Day) %>%
             group_by(PERMNO) %>%
-            mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(snt))) %>%
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            mutate(snt.diff = snt - lag(snt),
+                   opt.diff = opt - lag(opt),
+                   joy.diff = fear - lag(joy),
+                   fear.diff = fear - lag(fear)) %>% # c(NA,diff(snt))) %>%
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            select(-c(snt,opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1214,10 +1234,13 @@ TRMI_aggr_diff_m <- function(df){
             TRMI_aggr_level %>% 
             arrange(PERMNO, Yearmon) %>%
             group_by(PERMNO) %>%
-            mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(log(aggr.snt)))) %>%
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            mutate(snt.diff = snt - lag(snt),
+                   opt.diff = opt - lag(opt),
+                   joy.diff = fear - lag(joy),
+                   fear.diff = fear - lag(fear)) %>% # c(NA,diff(snt))) %>%
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            select(-c(snt,opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1228,10 +1251,13 @@ TRMI_aggr_diff_w <- function(df){
             TRMI_aggr_level_w %>% 
             arrange(PERMNO, Yearweek) %>%
             group_by(PERMNO) %>%
-            mutate(snt.diff = snt - lag(snt)) %>% # c(NA,diff(log(aggr.snt)))) %>%
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            mutate(snt.diff = snt - lag(snt),
+                   opt.diff = opt - lag(opt),
+                   joy.diff = fear - lag(joy),
+                   fear.diff = fear - lag(fear)) %>% # c(NA,diff(snt))) %>%
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.diff, opt.diff, joy.diff, fear.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            select(-c(snt,opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1241,10 +1267,13 @@ TRMI_aggr_glo_diff_d <- function(df){
   return( df %>% 
             TRMI_man %>% # aggregate data to monthly
             group_by(PERMNO) %>%
-            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
-            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE),
+                   opt.glo.diff = opt - mean(opt, na.rm = TRUE),
+                   joy.glo.diff = joy - mean(joy, na.rm = TRUE),
+                   fear.glo.diff = fear - mean(fear, na.rm = TRUE)) %>%
+            mutate_at(vars(snt.glo.diff, opt.glo.diff, joy.glo.diff, fear.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.glo.diff, opt.glo.diff, joy.glo.diff, fear.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            select(-c(snt, opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1254,10 +1283,13 @@ TRMI_aggr_glo_diff_m <- function(df){
   return( df %>% 
             TRMI_aggr_level %>% # aggregate data to monthly
             group_by(PERMNO) %>%
-            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
-            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
-            mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE),
+                   opt.glo.diff = opt - mean(opt, na.rm = TRUE),
+                   joy.glo.diff = joy - mean(joy, na.rm = TRUE),
+                   fear.glo.diff = fear - mean(fear, na.rm = TRUE)) %>%
+            mutate_at(vars(snt.glo.diff, opt.glo.diff, joy.glo.diff, fear.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
+            mutate_at(vars(snt.glo.diff, opt.glo.diff, joy.glo.diff, fear.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
+            select(-c(snt, opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1267,10 +1299,13 @@ TRMI_aggr_glo_diff_w <- function(df){
   return( df %>% 
             TRMI_aggr_level_w %>% 
             group_by(PERMNO) %>%
-            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE)) %>%
+            mutate(snt.glo.diff = snt - mean(snt, na.rm = TRUE),
+                   opt.glo.diff = opt - mean(opt, na.rm = TRUE),
+                   joy.glo.diff = joy - mean(joy, na.rm = TRUE),
+                   fear.glo.diff = fear - mean(fear, na.rm = TRUE)) %>%
             mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.infinite(.), ., NA))) %>% # code Inf values as NAs
             mutate_at(vars(snt.glo.diff), list(~ ifelse(!is.nan(.), ., NA))) %>% # code NAN values as NAs
-            select(-snt) %>%
+            select(-c(snt, opt, joy, fear)) %>%
             ungroup
   )
 }
@@ -1281,7 +1316,7 @@ TRMI.aggr.d <- TRMI %>%
   join(TRMI_aggr_glo_diff_d(TRMI), by = c("PERMNO", "Day")) %>%
   arrange(PERMNO, Day) 
 
-save(TRMI.aggr.d, file = paste(filepath, "TRMI.aggr.d.RData", sep = "/"))
+save(TRMI.aggr.d, file = paste(filepath, "TRMI.aggr.d.RData", sep = ""))
 
 TRMI.aggr.m <- TRMI %>%
   TRMI_aggr_level %>%
@@ -1325,9 +1360,9 @@ data.snt.d <- data.crsp.cln.d %>%
 # Unit Test
 # data.snt.d.validation <- summary(data.snt.d)
 # save(data.snt.d.validation, file = "data.snt.d.validation.RData")
-load("data.snt.d.validation.RData")
-expect_equal(summary(data.snt.d), data.snt.d.validation)
-rm(data.snt.d.validation)
+# load("data.snt.d.validation.RData")
+# expect_equal(summary(data.snt.d), data.snt.d.validation)
+# rm(data.snt.d.validation)
 
 save(data.snt.d, file = paste(filepath, "data.snt.d.RData", sep = "/"))
 rm(TRMI.aggr.d, data.crsp.cln.d)
@@ -1343,9 +1378,9 @@ data.snt.m <- data.both.FF.m %>%
 # Unit Test
 # data.snt.m.validation <- summary(data.snt.m)
 # save(data.snt.m.validation, file = "data.snt.m.validation.RData")
-load("data.snt.m.validation.RData")
-expect_equal(summary(data.snt.m), data.snt.m.validation)
-rm(data.snt.m.validation)
+# load("data.snt.m.validation.RData")
+# expect_equal(summary(data.snt.m), data.snt.m.validation)
+# rm(data.snt.m.validation)
 
 save(data.snt.m, file = paste(filepath, "data.snt.m.RData", sep = "/"))
 rm(TRMI.aggr.m, data.both.FF.m)
@@ -1382,9 +1417,9 @@ data.snt.w <- data.snt.m %>%
 # Unit Test
 # data.snt.w.validation <- summary(data.snt.w)
 # save(data.snt.w.validation, file = "data.snt.w.validation.RData")
-load("data.snt.w.validation.RData")
-expect_equal(summary(data.snt.w), data.snt.w.validation)
-rm(data.snt.w.validation)
+# load("data.snt.w.validation.RData")
+# expect_equal(summary(data.snt.w), data.snt.w.validation)
+# rm(data.snt.w.validation)
 
 save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = "/"))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
@@ -1396,7 +1431,7 @@ start <- 1997 # greater than 1925 or 1997 or 1962
 end <- 2018 # smaller than 2018 or 2014
 
 # daily
-load(paste(filepath, "dt.FF6.d.RData", sep = "" ))
+load(paste(filepath, "dt.FF6.d.RData", sep = "/" ))
 
 rf <- dt.FF6.d %>% 
   select(Day, RF) %>%
@@ -1449,7 +1484,11 @@ data.snt.w <- data.crsp.cln.w %>%
   mutate(Yearmon = as.yearmon(as.Date(Yearweek)))
 
 data.snt.w <- data.snt.m %>%  
-  select(-c(snt, snt.diff, snt.glo.diff, retadj.1mn, port.weight)) %>%
+  select(-c(snt, snt.diff, snt.glo.diff,
+            opt, opt.diff, opt.glo.diff,
+            joy, joy.diff, joy.glo.diff,
+            fear, fear.diff, fear.glo.diff,
+            retadj.1mn, port.weight)) %>%
   right_join(data.snt.w, by = c("PERMNO", "Yearmon")) %>%
   mutate(Yearweek = yearweek(Yearweek)) %>% 
   arrange(PERMNO, Yearweek)
@@ -1457,13 +1496,15 @@ data.snt.w <- data.snt.m %>%
 data.snt <- data.snt.w %>%
   dplyr::mutate(Date = Yearweek)
 
-load(paste(filepath, "dt.FF6.d.RData", sep = "" ))
+load(paste(filepath, "dt.FF6.d.RData", sep = "/" ))
 rf <- dt.FF6.d %>% 
   select(Day, RF) %>%
   filter(year(Day) > start & year(Day) < end) %>%
   mutate(Date = yearweek(as.Date(Day))) %>%
   group_by(Date) %>%
   summarize(RF = prod(1 + RF, na.rm = TRUE) - 1)
+
+dt.FF6 <- dt.FF6.d
 
 save(data.snt.w, file = paste(filepath, "data.snt.w.RData", sep = "/"))
 rm(TRMI.aggr.w, data.crsp.cln.d, data.snt.m)
@@ -1566,12 +1607,17 @@ temp2 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.OpIB
 temp3 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.AstChg), rf)
 temp4 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.ret.12t2), rf)
 temp5 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.glo.diff), rf) #global difference
-temp6 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.diff), rf) #change to previous day
-temp7 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf) #sentiment level
+#temp6 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.diff), rf) #change to previous day
+#temp7 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf) #sentiment level
 
-list.5x5.raw.d <- list(temp1, temp2, temp3, temp4, temp5, temp6, temp7)
+temp8 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(opt.glo.diff), rf) #global difference
+temp9 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(joy.glo.diff), rf) #global difference
+temp10 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(fear.glo.diff), rf) #global difference
+
+
+list.5x5.raw.d <- list(temp1, temp2, temp3, temp4, temp5, temp8, temp9, temp10 )
 save(list.5x5.raw.d, file = paste(filepath, "list.5x5.raw.d.RData", sep = "/"))
-rm(temp1, temp2, temp3, temp4, temp5, temp6, temp7)
+rm(temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, temp9, temp10)
 
 list.5x5.pf.d <- list.5x5.raw.d %>% lapply(construct_portfolio)
 save(list.5x5.pf.d, file = paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
@@ -1584,8 +1630,9 @@ attr(table_5x5.d, "subheadings") <- c("Panel A: Size-B/M Portfolios",
                                       "Panel C: Size-Inv Portfolios",
                                       "Panel D: Size-Mom Portfolios",
                                       "Panel E: Size-SNT Portfolios",
-                                      "Reference Previous Day",
-                                      "Reference Sentiment Level")
+                                      "Panel F: Size-Opt Portfolios",
+                                      "Panel G: Size-Joy Portfolios",
+                                      "Panel H: Size-SNT Portfolios")
 
 table_5x5.xtL.d <- table_5x5.d %>% 
   xtableList(colNames = FALSE,
@@ -1846,6 +1893,131 @@ print.xtableList(table_2x2x3x3.xtL.d,
                  include.rownames = TRUE)
 
 rm(list.2x2x3x3.raw.d, list.2x2x3x3.pf.d, table_2x2x3x3.d, table_2x2x3x3.xtL.d)
+
+# Form 3x3 portfolios ####
+load(paste(filepath, "data.snt.RData", sep = "/"))
+load(paste(filepath, "rf.RData", sep = "/"))
+
+# function to form sorts
+Form_CharSizePorts2_snt_5x5_new <- function(main, size, var, rf) { # streamlined version
+  # forms 5x5 (size x specificed-characteristc) and forms the 25 portfolios
+  # variables broken by quantiles (breakpoints uses NYSE data only)
+  # requires Date and exchcd
+  # outputs portfolio *excess* returns for each period,
+  # browser()
+  main.cln <- main %>%
+    select(Date, PERMNO, exchcd, !!size, !!var)
+  
+  Bkpts.NYSE <- main.cln %>% # create size and var breakpoints based on NYSE stocks only
+    filter(exchcd  ==  1) %>% # NYSE exchange
+    group_by(Date) %>%
+    summarize(var.P75 = quantile(!!var, probs = .75, na.rm = TRUE),
+              var.P25 = quantile(!!var, probs = .25, na.rm = TRUE),
+              size.S75 = quantile(!!size, probs = .75, na.rm = TRUE),
+              size.S25 = quantile(!!size, probs = .25, na.rm = TRUE))
+  
+  # calculate size and var portfolio returns
+  main.rank <- main.cln %>%
+    left_join(Bkpts.NYSE, by = "Date") %>% #format was lost due to join
+    mutate(Date = yearweek(Date), #format was lost due to join
+           Size = ifelse(!!size < size.S25, "S1", ifelse(!!size > size.S75, "S3", "S2")), #small big
+           Var = ifelse(!!var < var.P25, "P1", ifelse(!!var > var.P75, "P3", "P3"))) %>% #low high
+    group_by(PERMNO) %>% # *NEW
+    mutate_at(vars(Size, Var), list(~ na.locf(., na.rm = FALSE))) %>%
+    mutate(Port = paste(Size, Var, sep = ".")) %>%
+    select(Date, PERMNO, Port)
+  
+  df <- main %>%
+    select(Date, PERMNO, port.weight, retadj.1mn) %>%
+    left_join(main.rank, by = c("Date", "PERMNO")) %>% 
+    group_by(PERMNO) %>%    
+    mutate(Date = yearweek(Date)) %>% #format was lost due to join,
+    mutate_at(vars(Port), list(~ na.locf(., na.rm = FALSE))) 
+  
+  Ret <- df %>% 
+    group_by(Date, Port) %>%
+    summarize(ret.port = weighted.mean(coalesce(retadj.1mn,0), coalesce(port.weight,0), na.rm = TRUE)) %>% # calc value-weighted returns
+    spread(key = Port, value = ret.port) %>%
+    ungroup %>% # transpose portfolios expressed as rows into seperate columns
+    plyr::join(rf, by = "Date") %>% 
+    mutate(Date = yearweek(Date)) %>%  #format was lost due to join,
+    mutate_at(vars(-Date), list(~ (. - RF))) %>% #compute excess returns
+    select(-RF)
+  
+  return(Ret)
+}
+
+construct_portfolio <- function(df){
+  # browser()
+  output <- df %>% 
+    ungroup %>%
+    select(colnames(df[!grepl("NA", colnames(df))]))
+}
+
+construct_5x5_table <- function(df){
+  # browser()
+  rounder <- 10000 #1oo for %, 10000 for bps
+  output <- df %>% 
+    ungroup %>%
+    select(colnames(df[!grepl("NA", colnames(df))]),-Date) %>%
+    as.data.frame %>%
+    colMeans(na.rm = TRUE) %>%
+    matrix(.,nrow = 5, ncol = 5, byrow = TRUE)
+  rownames(output) <- c("Small", "2", "Big")
+  colnames(output) <- c("Negative", "2", "Positive")
+  output * rounder #scale to bps
+}
+
+temp1 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.BM.FF), rf)
+temp2 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.OpIB), rf)
+temp3 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.AstChg), rf)
+temp4 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(lag.ret.12t2), rf)
+temp5 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.glo.diff), rf) #global difference
+#temp6 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt.diff), rf) #change to previous day
+#temp7 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(snt), rf) #sentiment level
+
+temp8 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(opt.glo.diff), rf) #global difference
+temp9 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(joy.glo.diff), rf) #global difference
+temp10 <- Form_CharSizePorts2_snt_5x5_new(data.snt, quo(lag.ME.Jun), quo(fear.glo.diff), rf) #global difference
+
+
+list.5x5.raw.d <- list(temp1, temp2, temp3, temp4, temp5, temp8, temp9, temp10 )
+save(list.5x5.raw.d, file = paste(filepath, "list.5x5.raw.d.RData", sep = "/"))
+rm(temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, temp9, temp10)
+
+list.5x5.pf.d <- list.5x5.raw.d %>% lapply(construct_portfolio)
+save(list.5x5.pf.d, file = paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
+
+table_5x5.d <- list.5x5.raw.d %>% lapply(construct_5x5_table)
+save(table_5x5.d, file = paste(filepath, "table_5x5.d.Rdata", sep = "/"))
+
+attr(table_5x5.d, "subheadings") <- c("Panel A: Size-B/M Portfolios",
+                                      "Panel B: Size-OP Portfolios",
+                                      "Panel C: Size-Inv Portfolios",
+                                      "Panel D: Size-Mom Portfolios",
+                                      "Panel E: Size-SNT Portfolios",
+                                      "Panel F: Size-Opt Portfolios",
+                                      "Panel G: Size-Joy Portfolios",
+                                      "Panel H: Size-SNT Portfolios")
+
+table_5x5.xtL.d <- table_5x5.d %>% 
+  xtableList(colNames = FALSE,
+             caption = "5x5 Portfolios",
+             include.rownames = TRUE,
+             digits = 2,
+             label = "table_5x5.d")
+
+save(table_5x5.xtL.d, file = paste(filepath, "table_5x5.xtL.d.RData", sep = "/"))
+
+print.xtableList(table_5x5.xtL.d,
+                 tabular.environment = "tabularx",
+                 file = "table_5x5.d.tex",
+                 size = "footnotesize",
+                 caption.placement = "top",
+                 include.rownames = TRUE)
+
+rm(list.5x5.raw.d, list.5x5.pf.d, table_5x5.d, table_5x5.xtL.d)
+
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # ####
 # Form Factors ####
@@ -3062,7 +3234,7 @@ load(paste(filepath, "sorts.RData", sep = "/"))
 load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
 target <- list.5x5.pf.d[[1]] %>% 
-  select(Date, S1.P1)
+  select(Date, S3.P3)
 
 data <- sorts %>% 
   select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
@@ -3171,9 +3343,50 @@ val_steps <- (max.valid - min.valid - lookback) #/ batch_size
 # How many steps to draw from test_gen in order to see the entire test set
 test_steps <- (nrow(data) - min.test - lookback) #/ batch_size
 
-# Linear benchmark model ####
+# Compile function NOT USED ####
+compile_gen_fct <- function(model, i, steps_per_epoch = 500, epochs = 5, callback = NULL){
+  
+  model %>% compile(
+    optimizer = optimizer_rmsprop(),
+    loss = "mse",
+    metrics = r2_keras)
+  
+  trained_model <- model %>% fit_generator(
+    train_gen,
+    steps_per_epoch = steps_per_epoch,
+    epochs = epochs,
+    validation_data = val_gen,
+    validation_steps = val_steps)
+  return(trained_model)
+}
+
+# Linear benchmark model FF5 ####
 
 lin.model <- lm(train.data[,ncol(train.data)] ~ MktRf + SMB + HML + RMW + CMA + UMD, data = as.data.frame(train.data))
+
+# R2 not adjusted yet
+eval_fct <- function(pred, act){
+  # browser()
+  SS.res <- sum((pred - act)^2)
+  SS.tot <- sum((act - mean(act, na.rm = TRUE))^2)
+  r2 <- 1 - SS.res / SS.tot
+  
+  mse = mean((pred - act)^2, na.rm = TRUE)
+  
+  return(c(r2, mse))
+}
+
+(results <- eval_fct(lin.model$fitted.values, train.data[,ncol(train.data)]))
+
+predictions <- predict(lin.model, as.data.frame(valid.data))
+(results <-  eval_fct(predictions, valid.data[,ncol(valid.data)]))
+
+predictions <- predict(lin.model, as.data.frame(test.data))
+(results <-  eval_fct(predictions, test.data[,ncol(test.data)]))
+
+# Linear benchmark model FF5 incl. sentiment ####
+
+lin.model <- lm(train.data[,ncol(train.data)] ~ MktRf + SMB + HML + RMW + CMA + UMD + PMN, data = as.data.frame(train.data))
 
 # R2 not adjusted yet
 eval_fct <- function(pred, act){
@@ -3359,8 +3572,7 @@ get.mav <- function(bp,n=2){
 load(paste(filepath, "sorts.RData", sep = "/"))
 load(paste(filepath, "list.5x5.pf.d.RData", sep = "/"))
 
-target <- list.5x5.pf.d[[1]] %>% 
-  select(Date, S1.P1)
+target <- list.5x5.pf.d[[1]] 
 
 data <- sorts %>% 
   select(Date, MktRf, SMB, HML, RMW, CMA, UMD, PMN) %>% 
@@ -3396,11 +3608,11 @@ test.data <- data[min.test:max.test,] %>% na.omit
 
 # Plot price time series
 test <- cumprod(1 + as.data.frame(data)) * 100
-plot_ly(test, x = test$Date, y = test$S1.P1, type = "scatter", mode = "markers") %>%
+plot_ly(test, x = test$Date, y = test$S3.P3, type = "scatter", name = "PMN", mode = "lines") %>%
   add_trace(y = test$MktRf, x = test$Date, name = "MktRf", mode = "lines")
 
 # Compile function ####
-compile_fct <- function(model, batch = 32, epochs = 20, callback = NULL){
+compile_fct <- function(model, i, batch = 32, epochs = 20, callback = NULL){
   
   model %>% compile(
     optimizer = optimizer_rmsprop(),
@@ -3409,11 +3621,11 @@ compile_fct <- function(model, batch = 32, epochs = 20, callback = NULL){
   
   trained_model <- model %>% fit(
     x = subset(train.data, TRUE, c(MktRf:PMN_week52)),
-    y = subset(train.data, TRUE, c(S1.P1)),
+    y = subset(train.data, TRUE, i),
     batch_size = batch,
     epochs = epochs,
     validation_data = list(subset(valid.data, TRUE, c(MktRf:PMN_week52)),
-                           subset(valid.data, TRUE, c(S1.P1)))
+                           subset(valid.data, TRUE, i))
     # ,callbacks = list(callback_early_stopping(patience = 2))
   )
   return(trained_model)
@@ -3424,23 +3636,40 @@ compile_fct <- function(model, batch = 32, epochs = 20, callback = NULL){
 model <- keras_model_sequential() %>% 
   layer_dense(units = 1, activation = "linear") 
 
-trained_model <- model %>% compile_fct(batch = 32, epochs = 30)
+trained.model <- list()
+
+for (i in 57:(56 + 25)) {
+  trained.model[[i]] <- model %>% compile_fct(i, batch = 32, epochs = 50)
+}
 # trained_model %>% plot() + geom_line()
 
-save(trained_model, file = "linear.history.lags.RData")
+save(trained.model, file = "linear.history.lags.RData")
 
 
 # Basic machine learning approach with different lags####
 
 model <- keras_model_sequential() %>% 
-  layer_flatten(input_shape =  c(dim(train.data)[2] - 1)) %>% 
+  layer_flatten(input_shape =  c(dim(subset(train.data, TRUE, c(MktRf:PMN_week52)))[2])) %>% 
   layer_dense(units = 64, activation = "relu") %>% 
   layer_dense(units = 8, activation = "relu") %>% 
   layer_dense(units = 1)
 
-trained_model <- model %>% compile_fct(epochs = 50)
+trained.model2 <- list()
 
-save(trained_model, file = "base.history.lags.RData")
+for (i in 57:(56 + 25)) {
+  trained.model2[[i]] <- model %>% compile_fct(i, batch = 32, epochs = 50)
+}
+
+save(trained.model2, file = "base.history.lags.RData")
+
+trained.model %>% 
+  sapply('[', 2) %>% 
+  sapply('[[',"metrics") %>% 
+  sapply('[[', "val_r2_keras") %>% 
+  lapply("mean") %>% 
+  list2df() %>% 
+  na.omit() %>% 
+  summarize_at(vars(X1), list(~mean(., na.rm = T)))
 
 # A first recurrent baseline ####
 
